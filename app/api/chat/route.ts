@@ -1,0 +1,117 @@
+import { randomUUID } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { NextResponse } from "next/server";
+import { currentUser } from "@/lib/auth";
+import { getDb, run, UPLOAD_DIR } from "@/lib/db";
+import { conversation, listMembersWithPresence, markRead, unreadCounts } from "@/lib/queries";
+
+/**
+ * Chat runs on a poll, not a socket. A self-hosted single instance does not
+ * justify a WebSocket server, and Server Actions would revalidate the whole
+ * board on every message. Reading a conversation also marks it read.
+ */
+
+const MAX_BODY = 4000;
+const MAX_FILE = 10 * 1024 * 1024;
+const MAX_FILES = 5;
+const EDIT_WINDOW_MS = 15 * 60 * 1000;
+
+export async function GET(req: Request) {
+  const me = await currentUser();
+  if (!me) return new NextResponse("Unauthorized", { status: 401 });
+
+  const url = new URL(req.url);
+  const withParam = url.searchParams.get("with");
+  const withUser = !withParam || withParam === "all" ? null : withParam;
+  const after = Number(url.searchParams.get("after") ?? 0) || 0;
+
+  // Viewing a conversation is what marks it read.
+  markRead(me.id, withUser);
+
+  return NextResponse.json(
+    {
+      messages: conversation(me.id, withUser, after),
+      members: listMembersWithPresence(),
+      unread: unreadCounts(me.id),
+      me: me.id,
+    },
+    { headers: { "cache-control": "no-store" } },
+  );
+}
+
+export async function POST(req: Request) {
+  const me = await currentUser();
+  if (!me) return new NextResponse("Unauthorized", { status: 401 });
+
+  const isForm = (req.headers.get("content-type") ?? "").includes("multipart/form-data");
+  let to: string | null = null;
+  let text = "";
+  let files: File[] = [];
+
+  if (isForm) {
+    const form = await req.formData();
+    to = (form.get("to") as string) || null;
+    text = String(form.get("body") ?? "").trim();
+    files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  } else {
+    const json = (await req.json()) as { to?: string | null; body?: string };
+    to = json.to ?? null;
+    text = (json.body ?? "").trim();
+  }
+
+  if (!text && files.length === 0) return new NextResponse("Empty message", { status: 400 });
+  if (text.length > MAX_BODY) return new NextResponse("Message too long", { status: 413 });
+  if (files.length > MAX_FILES) return new NextResponse(`At most ${MAX_FILES} files`, { status: 413 });
+  if (files.some((f) => f.size > MAX_FILE)) return new NextResponse("File larger than 10 MB", { status: 413 });
+
+  // Write the blobs first: a file on disk with no row is harmless litter,
+  // a row pointing at a missing file is a broken download.
+  const saved = await Promise.all(
+    files.map(async (f) => {
+      const id = randomUUID();
+      mkdirSync(UPLOAD_DIR, { recursive: true });
+      writeFileSync(join(UPLOAD_DIR, id), Buffer.from(await f.arrayBuffer()));
+      return { id, name: f.name || "file", mime: f.type || "application/octet-stream", size: f.size };
+    }),
+  );
+
+  const now = new Date().toISOString();
+  const info = run(
+    "INSERT INTO messages (author_id, recipient_id, body, created_at) VALUES (?,?,?,?)",
+    me.id, to && to !== "all" ? to : null, text, now,
+  );
+  const messageId = Number(info.lastInsertRowid);
+
+  for (const f of saved) {
+    run(
+      "INSERT INTO attachments (id, message_id, name, mime, size, created_at) VALUES (?,?,?,?,?,?)",
+      f.id, messageId, f.name, f.mime, f.size, now,
+    );
+  }
+
+  return new NextResponse(null, { status: 204 });
+}
+
+export async function PATCH(req: Request) {
+  const me = await currentUser();
+  if (!me) return new NextResponse("Unauthorized", { status: 401 });
+
+  const { id, body } = (await req.json()) as { id?: number; body?: string };
+  const text = (body ?? "").trim();
+  if (!id || !text) return new NextResponse("Bad request", { status: 400 });
+  if (text.length > MAX_BODY) return new NextResponse("Message too long", { status: 413 });
+
+  const row = getDb()
+    .prepare("SELECT author_id, created_at FROM messages WHERE id = ?")
+    .get(id) as { author_id: string; created_at: string } | undefined;
+
+  if (!row) return new NextResponse("Not found", { status: 404 });
+  if (row.author_id !== me.id) return new NextResponse("Not your message", { status: 403 });
+  if (Date.now() - new Date(row.created_at).getTime() > EDIT_WINDOW_MS) {
+    return new NextResponse("Edit window closed", { status: 403 });
+  }
+
+  run("UPDATE messages SET body = ?, edited_at = ? WHERE id = ?", text, new Date().toISOString(), id);
+  return new NextResponse(null, { status: 204 });
+}
