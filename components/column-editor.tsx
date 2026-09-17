@@ -1,0 +1,130 @@
+"use client";
+
+import { useState } from "react";
+import { ArrowLeft, ArrowRight, Check, Trash2, X } from "lucide-react";
+import { PALETTE } from "@/lib/board";
+
+const NEUTRAL = "var(--muted-foreground)";
+const SWATCHES = [NEUTRAL, ...PALETTE];
+
+/**
+ * One popover used for both "add column" and "edit column" — same fields,
+ * so there is no reason for two components.
+ */
+export function ColumnEditor({
+  title: initialTitle = "",
+  color: initialColor = NEUTRAL,
+  heading,
+  submitLabel,
+  onSubmit,
+  onDelete,
+  onMove,
+  onClose,
+}: {
+  title?: string;
+  color?: string;
+  heading: string;
+  submitLabel: string;
+  onSubmit: (title: string, color: string) => Promise<{ error?: string } | void>;
+  onDelete?: () => Promise<{ error?: string } | void>;
+  onMove?: (direction: -1 | 1) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(initialTitle);
+  const [color, setColor] = useState(initialColor);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (busy) return;
+    setBusy(true);
+    const res = await onSubmit(title, color);
+    setBusy(false);
+    if (res?.error) return setError(res.error);
+    onClose();
+  }
+
+  return (
+    <div className="absolute left-0 top-8 z-30 w-60 rounded-lg border bg-card p-3 shadow-lg">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-xs font-semibold">{heading}</span>
+        <button onClick={onClose} className="ml-auto text-muted-foreground hover:text-foreground">
+          <X className="size-3.5" />
+        </button>
+      </div>
+
+      <input
+        value={title}
+        autoFocus
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void submit();
+          if (e.key === "Escape") onClose();
+        }}
+        placeholder="Column name"
+        className="mb-2 w-full rounded-md border bg-background px-2 py-1.5 text-xs outline-none focus:border-ring"
+      />
+
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {SWATCHES.map((c) => (
+          <button
+            key={c}
+            onClick={() => setColor(c)}
+            aria-label={`Colour ${c}`}
+            style={{ background: c }}
+            className={`size-5 rounded-full transition-transform ${
+              color === c ? "ring-2 ring-ring ring-offset-2 ring-offset-card" : "hover:scale-110"
+            }`}
+          >
+            {color === c && <Check className="mx-auto size-3 text-white" />}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="mb-2 text-[11px] text-[var(--chart-7)]">{error}</p>}
+
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => void submit()}
+          disabled={busy}
+          className="rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+        >
+          {busy ? "Saving…" : submitLabel}
+        </button>
+
+        {onMove && (
+          <>
+            <button
+              onClick={() => void onMove(-1)}
+              title="Move left"
+              className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <ArrowLeft className="size-3.5" />
+            </button>
+            <button
+              onClick={() => void onMove(1)}
+              title="Move right"
+              className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <ArrowRight className="size-3.5" />
+            </button>
+          </>
+        )}
+
+        {onDelete && (
+          <button
+            onClick={async () => {
+              const res = await onDelete();
+              if (res?.error) return setError(res.error);
+              onClose();
+            }}
+            title="Delete column"
+            className="ml-auto rounded-md border p-1.5 text-muted-foreground transition-colors hover:bg-[rgba(239,68,68,0.08)] hover:text-[var(--chart-7)]"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
