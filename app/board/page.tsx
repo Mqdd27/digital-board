@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { currentUser } from "@/lib/auth";
 import { get, isInstalled } from "@/lib/db";
 import { activityFeed, analytics, getBoard, listCanvases, listMembers, listMembersWithPresence, listProjects, myTasks } from "@/lib/queries";
@@ -28,6 +29,7 @@ export default async function BoardPage({ searchParams }: PageProps<"/board">) {
       stats={project ? await analytics(project.id) : null}
       sheets={project ? await listCanvases(project.id) : []}
       today={new Date().toISOString().slice(0, 10)}
+      dark={(await cookies()).get("theme")?.value === "dark"}
     />
   );
 }

@@ -1,30 +1,29 @@
 "use client";
 
-import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { Check, Pencil, Plus, Trash2 } from "lucide-react";
-import type { Editor } from "tldraw";
-import "tldraw/tldraw.css";
+import "@excalidraw/excalidraw/index.css";
 import { createCanvas, deleteCanvas, renameCanvas } from "@/lib/actions";
 import type { CanvasMeta } from "@/lib/queries";
 
-// tldraw is browser-only and heavy — keep it out of the server bundle and off
-// the initial board payload.
-const Tldraw = dynamic(() => import("tldraw").then((m) => m.Tldraw), {
+// Excalidraw is browser-only and heavy — keep it out of the server bundle and
+// off the initial board payload.
+const Excalidraw = dynamic(() => import("@excalidraw/excalidraw").then((m) => m.Excalidraw), {
   ssr: false,
-  loading: () => <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading canvas…</div>,
+  loading: () => (
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading canvas…</div>
+  ),
 });
 
 const SAVE_DEBOUNCE = 800;
 
 /**
- * tldraw arrives as its own lazily-loaded chunk, and it lazily loads more of
- * itself when you insert media. A deploy replaces those chunk files, so a tab
- * that was open across the deploy asks for hashes that no longer exist: the
- * import rejects and `next/dynamic` renders *nothing*. The canvas area goes
- * blank — on a dark theme, an alarming black rectangle that looks like lost
- * work. Nothing is lost; the page just needs reloading. Say so instead of
- * showing a void.
+ * The canvas arrives as its own lazily-loaded chunk. A deploy replaces those
+ * chunk files, so a tab that was open across the deploy asks for hashes that no
+ * longer exist: the import rejects and `next/dynamic` renders *nothing*. The
+ * canvas area goes blank — on a dark theme, an alarming black rectangle that
+ * looks like lost work. Nothing is lost; the page just needs reloading.
  */
 class CanvasBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -51,47 +50,59 @@ class CanvasBoundary extends Component<{ children: ReactNode }, { failed: boolea
   }
 }
 
+type Api = { getSceneElements: () => readonly unknown[]; getAppState: () => object; getFiles: () => object };
+
 export function CanvasView({
   projectId,
   sheets,
+  dark,
   onChanged,
 }: {
   projectId: string;
   sheets: CanvasMeta[];
+  dark: boolean;
   onChanged: () => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
-  const editorRef = useRef<Editor | null>(null);
+  const apiRef = useRef<Api | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Derived, not synced: a deleted sheet falls back to the first one without an
   // effect round-trip (and without the cascading render that comes with one).
   const activeId = selected && sheets.some((s) => s.id === selected) ? selected : (sheets[0]?.id ?? null);
 
+  // Excalidraw accepts a promise for initialData, so the sheet loads itself on
+  // mount instead of mounting empty and being filled afterwards.
+  const initialData = useMemo(() => {
+    if (!activeId) return null;
+    return fetch(`/api/canvas/${activeId}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((saved) => (saved ? { ...saved, scrollToContent: true } : null))
+      .catch(() => null); // a corrupt or unreachable snapshot starts empty rather than throwing
+  }, [activeId]);
+
   /**
-   * Save the current sheet.
-   *
-   * `unload` marks the last-gasp save fired from pagehide, which is the only
-   * place `keepalive` is worth having — and the only place it is safe. The
-   * Fetch standard caps a keepalive request body at 64 KiB, and Chromium
-   * rejects anything bigger outright (net::ERR_ABORTED) rather than sending
-   * it. A snapshot holding one pasted image is ~400 KiB, so a keepalive save
-   * silently dropped every drawing that contained media: the canvas looked
-   * fine until reload, then came back without it. Normal saves must never use
-   * it.
+   * `unload` marks the last-gasp save fired from pagehide, the only place
+   * `keepalive` is worth having and the only place it is safe: the Fetch
+   * standard caps a keepalive body at 64 KiB and Chromium rejects anything
+   * larger outright, which silently dropped every drawing containing an image.
    */
   const flush = useCallback(
     async (unload = false) => {
-      const editor = editorRef.current;
-      if (!editor || !activeId) return;
+      const api = apiRef.current;
+      if (!api || !activeId) return;
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
 
-      const body = JSON.stringify(editor.getSnapshot());
-      // Over the keepalive cap there is nothing useful to attempt on unload;
-      // the 800ms debounce has almost certainly already stored this.
+      const { serializeAsJSON } = await import("@excalidraw/excalidraw");
+      const body = serializeAsJSON(
+        api.getSceneElements() as never,
+        api.getAppState() as never,
+        api.getFiles() as never,
+        "local",
+      );
       if (unload && body.length > 60_000) return;
 
       setStatus("saving");
@@ -104,7 +115,6 @@ export function CanvasView({
         });
         setStatus(res.ok ? "idle" : "error");
       } catch {
-        // A failed save must never take the canvas down with it.
         setStatus("error");
       }
     },
@@ -121,30 +131,10 @@ export function CanvasView({
     };
   }, [flush]);
 
-  const init = useCallback(
-    async (editor: Editor) => {
-      editorRef.current = editor;
-      if (!activeId) return;
-
-      try {
-        const res = await fetch(`/api/canvas/${activeId}`, { cache: "no-store" });
-        const saved = res.ok ? await res.json() : null;
-        if (saved) editor.loadSnapshot(saved);
-      } catch {
-        // A corrupt or unreachable snapshot must not brick the sheet —
-        // start it empty rather than throwing inside onMount.
-      }
-
-      editor.store.listen(
-        () => {
-          if (timer.current) clearTimeout(timer.current);
-          timer.current = setTimeout(() => void flush(), SAVE_DEBOUNCE);
-        },
-        { scope: "document", source: "user" },
-      );
-    },
-    [activeId, flush],
-  );
+  const schedule = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void flush(), SAVE_DEBOUNCE);
+  }, [flush]);
 
   async function addSheet() {
     await flush();
@@ -180,12 +170,7 @@ export function CanvasView({
                   }}
                   className="flex items-center gap-1"
                 >
-                  <input
-                    name="name"
-                    defaultValue={s.name}
-                    autoFocus
-                    className="w-24 rounded border bg-background px-1 py-0.5 text-xs outline-none"
-                  />
+                  <input name="name" defaultValue={s.name} autoFocus className="w-24 rounded border bg-background px-1 py-0.5 text-xs outline-none" />
                   <button type="submit" className="text-muted-foreground hover:text-foreground">
                     <Check className="size-3" />
                   </button>
@@ -202,7 +187,7 @@ export function CanvasView({
                       </button>
                       <button
                         onClick={async () => {
-                          if (!confirm(`Delete sheet "${s.name}"? Gambarnya ikut terhapus.`)) return;
+                          if (!confirm(`Delete sheet "${s.name}"? Its drawing goes with it.`)) return;
                           await deleteCanvas(s.id);
                           onChanged();
                         }}
@@ -239,15 +224,17 @@ export function CanvasView({
         {activeId ? (
           // Remounting per sheet is what keeps one sheet's drawing out of another.
           <CanvasBoundary key={activeId}>
-            <Tldraw onMount={(editor) => void init(editor)} className="absolute inset-0" />
+            <Excalidraw
+              initialData={initialData}
+              excalidrawAPI={(api: Api) => (apiRef.current = api)}
+              onChange={schedule}
+              theme={dark ? "dark" : "light"}
+            />
           </CanvasBoundary>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <p className="text-sm text-muted-foreground">No sheets in this project yet.</p>
-            <button
-              onClick={addSheet}
-              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
-            >
+            <button onClick={addSheet} className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
               <Plus className="size-3" />
               Create the first sheet
             </button>

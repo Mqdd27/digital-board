@@ -46,7 +46,7 @@ const SECTIONS: { key: SectionKey; Icon: typeof Home; label: string }[] = [
 ];
 
 export function Workspace({
-  user, workspace, projects, project, columns, members, presence, feed, mine, stats, sheets, today,
+  user, workspace, projects, project, columns, members, presence, feed, mine, stats, sheets, today, dark,
 }: {
   user: User;
   workspace: string;
@@ -60,6 +60,7 @@ export function Workspace({
   sheets: CanvasMeta[];
   presence: MemberPresence[];
   today: string;
+  dark: boolean;
 }) {
   const router = useRouter();
   const [section, setSection] = useState<SectionKey>("home");
@@ -349,7 +350,7 @@ export function Workspace({
         ) : !project ? (
           <EmptyProject />
         ) : section === "canvas" ? (
-          <CanvasView projectId={project.id} sheets={sheets} onChanged={() => router.refresh()} />
+          <CanvasView projectId={project.id} sheets={sheets} dark={dark} onChanged={() => router.refresh()} />
         ) : section === "inbox" ? (
           <FeedView feed={feed} />
         ) : section === "mine" ? (

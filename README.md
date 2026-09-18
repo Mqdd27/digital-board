@@ -60,7 +60,7 @@ signs in once more.
 | **Board** | Drag and drop with reordering inside a column and positional drops between columns. Mouse, touch and keyboard. Columns are add / rename / recolour / reorder / delete. |
 | **List, Calendar, Analytics** | The same tasks as a table, on a month grid by due date, and as charts — column distribution, priority split, workload per member, 14-day activity. |
 | **History** | Every move, reorder and field change is logged with its actor. Per task, and board-wide in the Inbox. |
-| **Canvas** | tldraw with sheet tabs. Each sheet keeps its own drawing. |
+| **Canvas** | Excalidraw with sheet tabs. Each sheet keeps its own drawing. |
 | **Chat** | Workspace channel plus direct messages, with unread badges, attachments and a 15-minute edit window. |
 | **Accounts** | Multi-user with `scrypt` password hashing and cookie sessions. Presence shows who is online. |
 
@@ -113,7 +113,7 @@ transaction and rolls back.
 
 No self-service password reset. Chat polls every 3 seconds rather than using a
 socket, and has no deletion, reactions or threads. Attachment files are not
-garbage-collected. The canvas does not follow the light/dark toggle. Running more
+garbage-collected.  Running more
 than one instance requires shared storage for `UPLOAD_DIR`.
 
 Full list in the [docs](/docs).

@@ -330,7 +330,7 @@ WantedBy=multi-user.target`}</Code>
               [<strong className="text-foreground">My Tasks</strong>, <>Everything assigned to you, soonest due first, overdue in red.</>],
               [<strong className="text-foreground">Inbox</strong>, <>Every change to every task, newest first, with who did it.</>],
               [<strong className="text-foreground">Task history</strong>, <>Creation, column moves, reorders, and title/priority/assignee/due-date edits are all recorded. Open a task to see its timeline.</>],
-              [<strong className="text-foreground">Canvas</strong>, <>tldraw with sheet tabs. Each sheet keeps its own drawing, saved on an 800ms debounce as you draw and flushed when you switch sheets or close the tab; switching sheets never disturbs another one. Pasted images are embedded in the sheet&rsquo;s snapshot rather than stored as attachments, so an image-heavy sheet becomes a large row.</>],
+              [<strong className="text-foreground">Canvas</strong>, <>Excalidraw with sheet tabs. Each sheet keeps its own drawing, saved on an 800ms debounce as you draw and flushed when you switch sheets or close the tab; switching sheets never disturbs another one. Pasted images are embedded in the sheet&rsquo;s snapshot rather than stored as attachments, so an image-heavy sheet becomes a large row.</>],
               [<strong className="text-foreground">Chat</strong>, <>A workspace channel everyone reads, plus a direct message thread per member. Unread badges, file attachments with inline image previews, and 15 minutes to edit your own message.</>],
               [<strong className="text-foreground">Presence</strong>, <>Online / away / offline per member, derived from activity rather than stored.</>],
               [<strong className="text-foreground">Projects</strong>, <>Add and delete from Settings, switch from the sidebar. New projects start with the default columns.</>],
@@ -352,7 +352,7 @@ WantedBy=multi-user.target`}</Code>
               [<C>columns</C>, <>Board columns, ordered by a dense <C>position</C>.</>],
               [<C>tasks</C>, <>Cards: title, label, priority, assignee, due date, position within a column.</>],
               [<C>task_events</C>, <>The history log — one row per change, with the actor.</>],
-              [<C>canvases</C>, <>Canvas sheets and their tldraw snapshots.</>],
+              [<C>canvases</C>, <>Canvas sheets and their Excalidraw scenes.</>],
               [<C>messages</C>, <>Chat. A <C>NULL</C> recipient is the workspace channel; a user id is a direct message.</>],
               [<C>message_reads</C>, <>One read cursor per person per conversation, which is what drives unread badges.</>],
               [<C>attachments</C>, <>Metadata for uploaded files. The bytes live on disk in <C>UPLOAD_DIR</C>, not in the database.</>],
@@ -443,7 +443,7 @@ pm2 restart digital-board        # or: systemctl restart digital-board`}</Code>
               [<>Everyone shows as Offline / never signed in</>, <>Presence needs at least one authenticated request per user. A member who has never signed in has no last-seen stamp and correctly reads as offline.</>],
               [<>Attachment upload fails behind a proxy</>, <>The proxy body limit is below 10 MB. Raise <C>client_max_body_size</C> (nginx) or the equivalent.</>],
               [<>Drawing does not save, &ldquo;Save failed&rdquo; in the canvas tab bar</>, <>The snapshot POST is being rejected upstream — check the proxy body limit. Snapshots grow with the drawing: a pasted image is embedded in the snapshot and takes it to hundreds of KB.</>],
-              [<>The canvas area is blank after a deploy</>, <>A tab open across a deploy asks for chunk files the new build replaced, and tldraw loads as its own chunk. The canvas now says so and offers a reload; older builds showed an empty black panel. Nothing is lost — reload the page. It is also why the whole tldraw toolbar disappears, not just the drawing.</>],
+              [<>The canvas area is blank after a deploy</>, <>A tab open across a deploy asks for chunk files the new build replaced, and the canvas library loads as its own chunk. The canvas now says so and offers a reload; older builds showed an empty black panel. Nothing is lost — reload the page. It is also why the whole canvas toolbar disappears, not just the drawing.</>],
               [<>A pasted image vanishes from the canvas after reload</>, <>Fixed. The save used a <C>keepalive</C> fetch, whose body the Fetch standard caps at 64 KiB; anything larger was rejected outright, so drawings containing media were never stored. Upgrade past this fix and re-add the image.</>],
               [<>Times are hours off</>, <>Timestamps render in the server&rsquo;s timezone. Set <C>TZ</C> on the service.</>],
               [<>Import says the target already has accounts</>, <>The guard against importing twice. Use a fresh database, or pass <C>--force</C> if you really mean to merge.</>],
@@ -459,8 +459,7 @@ pm2 restart digital-board        # or: systemctl restart digital-board`}</Code>
             <li>Chat has no deletion, reactions, threads or typing indicators, and polling means near-real-time, not instant.</li>
             <li>Attachment files are not garbage-collected — deleting a message drops its row but leaves the blob on disk.</li>
             <li>Columns move one step at a time from the editor; there is no drag-to-reorder for columns themselves.</li>
-            <li>The canvas does not follow the app&rsquo;s light/dark toggle.</li>
-            <li>Every route renders dynamically, because the root layout reads the theme cookie.</li>
+                        <li>Every route renders dynamically, because the root layout reads the theme cookie.</li>
           </ul>
 
           <H id="develop">Development</H>

@@ -4,7 +4,7 @@ import { get, run } from "@/lib/db";
 
 /**
  * Canvas snapshots travel through a Route Handler, not a Server Action.
- * Server Actions cap the request body at 1 MB, and a tldraw snapshot blows past
+ * Server Actions cap the request body at 1 MB, and a canvas scene blows past
  * that as soon as a drawing gets real (pasted images are inlined as data URLs).
  * Route Handlers have no such cap, so raising `serverActions.bodySizeLimit`
  * would only move the failure, not remove it.
