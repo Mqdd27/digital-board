@@ -64,7 +64,7 @@ export function HomeView({
           <Tile label="Assigned to you" value={mine.length} hint={dueToday ? `${dueToday} due today` : undefined} />
           <Tile label="Overdue" value={overdue} hint={overdue ? "needs attention" : "all clear"} />
           <Tile label="Completed" value={done} hint={total ? `${Math.round((done / total) * 100)}% of ${total}` : undefined} />
-          <Tile label="Total taskss" value={total} />
+          <Tile label="Total tasks" value={total} />
         </div>
 
         <div className="grid gap-5 md:grid-cols-2">

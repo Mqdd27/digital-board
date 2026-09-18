@@ -40,7 +40,7 @@ function ready() {
 const tx = new AsyncLocalStorage<pg.PoolClient>();
 
 /**
- * Call sites keep SQLite's `?` placeholders; Postgres wants `$1`, `$2`.
+ * Call sites write `?` placeholders; Postgres wants `$1`, `$2`.
  * Rewriting here means the ~80 queries did not have to be touched.
  * ponytail: naive scan — a literal `?` inside a string literal would be
  * rewritten too. None of the queries contain one; add quote-awareness if that

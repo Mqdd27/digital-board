@@ -10,7 +10,7 @@ const FEATURES = [
   { Icon: LayoutGrid, title: "Kanban board", desc: "Columns you define during setup. Drag tasks between them, or reorder within one — mouse, touch, or keyboard." },
   { Icon: ListChecks, title: "Four ways to look", desc: "Board, List, Calendar and Analytics read the same data — pick whichever fits the moment." },
   { Icon: Timer, title: "Full history", desc: "Every move, priority change and assignment is recorded with a timestamp and who did it." },
-  { Icon: Calendar, title: "Due di kalender", desc: "Task bertenggat muncul di tampilan bulanan, ditandai warna sesuai prioritas." },
+  { Icon: Calendar, title: "Due dates on a calendar", desc: "Tasks with a due date appear on the month grid, colour-coded by priority." },
   { Icon: BarChart3, title: "Analytics built in", desc: "Distribution per column and priority, workload per member, and the last 14 days of activity." },
   { Icon: Lock, title: "Multi-user", desc: "Real accounts with hashed passwords, cookie sessions, and per-member task assignment." },
 ];
@@ -44,7 +44,7 @@ export default async function Home() {
       <section className="mx-auto max-w-6xl px-6 pb-20 pt-24 text-center">
         <div className="mb-8 inline-flex items-center gap-2 rounded-full border bg-secondary px-3 py-1 text-xs font-medium text-muted-foreground">
           <Database className="size-3" />
-          Self-hosted · SQLite · no third-party services
+          Self-hosted · PostgreSQL · no third-party services
         </div>
 
         <h1 className="mx-auto mb-6 max-w-3xl text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl md:text-6xl">
@@ -54,7 +54,7 @@ export default async function Home() {
         </h1>
 
         <p className="mx-auto mb-10 max-w-xl text-base leading-relaxed text-muted-foreground">
-          Boards, deadlines and history in one app you run yourself. One SQLite file, no third-party account,
+          Boards, deadlines and history in one app you run yourself. Your own PostgreSQL, no third-party account,
           no per-seat billing.
         </p>
 

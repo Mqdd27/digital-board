@@ -17,7 +17,6 @@ const TOC = [
   ["install", "Installation"],
   ["first-run", "First run"],
   ["config", "Configuration"],
-  ["migrate", "Migrating from SQLite"],
   ["deploy", "Running in production"],
   ["features", "Features"],
   ["data", "Data model"],
@@ -189,39 +188,6 @@ npm start`}</Code>
             ]}
           />
 
-          <H id="migrate">Migrating from SQLite</H>
-          <p className="text-sm text-muted-foreground">
-            Earlier versions stored everything in <C>db/board.sqlite</C>. The importer copies that file into Postgres.
-            It opens the SQLite file <strong className="text-foreground">read-only</strong> and never writes to it, so
-            it stays a working rollback: point an older build at it and you are exactly where you started.
-          </p>
-          <Code>{`# 1. back up first, even though the importer only reads
-cp db/board.sqlite db/board.sqlite.bak
-
-# 2. create the Postgres database, set DATABASE_URL in .env
-
-# 3. import
-DATABASE_URL=postgres://board:pw@localhost:5432/board \\
-  node scripts/sqlite-to-postgres.mjs ./db/board.sqlite
-
-# 4. check the app against the migrated data
-DATABASE_URL=postgres://board:pw@localhost:5432/board \\
-  node lib/postgres.check.mjs`}</Code>
-          <p className="text-sm text-muted-foreground">What it does and does not carry across:</p>
-          <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
-            <li>Accounts, settings, projects, columns, tasks, task history, canvas sheets, chat messages, read cursors and attachment records all move, in foreign-key order.</li>
-            <li>Attachment <em>files</em> are copied from <C>db/uploads/</C> to <C>UPLOAD_DIR</C>.</li>
-            <li><strong className="text-foreground">Login sessions are not carried over</strong> — everyone signs in once more. Carrying stale tokens across is not worth the risk.</li>
-            <li>It runs in a single transaction. If anything fails, nothing is committed.</li>
-            <li>It refuses to run against a Postgres database that already has accounts, unless you pass <C>--force</C>, so a second accidental run cannot double up.</li>
-            <li>Row counts are compared at the end and the import fails loudly if they disagree.</li>
-            <li>Identity sequences are advanced past the imported ids, so the next message or history entry does not collide with a migrated row.</li>
-          </ul>
-          <p className="text-sm text-muted-foreground">
-            Once you are satisfied, keep the <C>.sqlite</C> file somewhere for a while anyway. Deleting it is the one
-            step that cannot be undone.
-          </p>
-
           <H id="deploy">Running in production</H>
           <p className="text-sm text-muted-foreground">
             Any host that runs Node works. Build once, then keep the process alive. pm2 is the path below; systemd,
@@ -259,8 +225,7 @@ pm2 save          # remember the process list
 pm2 startup       # print the command that re-runs pm2 at boot, then run it`}</Code>
           <p className="rounded-lg border border-[var(--chart-7)] bg-[rgba(239,68,68,0.06)] p-4 text-sm">
             <strong className="text-foreground">Raising <C>instances</C> is allowed now, with one condition.</strong>{" "}
-            Postgres handles concurrent writers, so cluster mode no longer risks the database — that warning belonged
-            to the SQLite era. What is still shared state is <C>UPLOAD_DIR</C>: every instance must see the same
+            Postgres handles concurrent writers, so cluster mode does not risk the database. What is shared state is <C>UPLOAD_DIR</C>: every instance must see the same
             directory, or an attachment uploaded by one worker 404s from another. On a single host that is automatic.
             Across hosts you need shared storage. Also raise <C>DATABASE_POOL_MAX</C> with care — each instance opens
             its own pool, so total connections is instances × pool size.

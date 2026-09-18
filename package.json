@@ -2,12 +2,13 @@
   "name": "digital-board",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "description": "Self-hosted kanban board with canvas and chat, on your own PostgreSQL.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "import:sqlite": "node scripts/sqlite-to-postgres.mjs"
+    "lint": "eslint"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -28,12 +29,10 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "better-sqlite3": "^13.0.3",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
