@@ -36,29 +36,50 @@ export function CanvasView({
   // effect round-trip (and without the cascading render that comes with one).
   const activeId = selected && sheets.some((s) => s.id === selected) ? selected : (sheets[0]?.id ?? null);
 
-  const flush = useCallback(async () => {
-    const editor = editorRef.current;
-    if (!editor || !activeId) return;
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    setStatus("saving");
-    try {
-      const res = await fetch(`/api/canvas/${activeId}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(editor.getSnapshot()),
-        keepalive: true,
-      });
-      setStatus(res.ok ? "idle" : "error");
-    } catch {
-      // A failed save must never take the canvas down with it.
-      setStatus("error");
-    }
-  }, [activeId]);
+  /**
+   * Save the current sheet.
+   *
+   * `unload` marks the last-gasp save fired from pagehide, which is the only
+   * place `keepalive` is worth having — and the only place it is safe. The
+   * Fetch standard caps a keepalive request body at 64 KiB, and Chromium
+   * rejects anything bigger outright (net::ERR_ABORTED) rather than sending
+   * it. A snapshot holding one pasted image is ~400 KiB, so a keepalive save
+   * silently dropped every drawing that contained media: the canvas looked
+   * fine until reload, then came back without it. Normal saves must never use
+   * it.
+   */
+  const flush = useCallback(
+    async (unload = false) => {
+      const editor = editorRef.current;
+      if (!editor || !activeId) return;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+
+      const body = JSON.stringify(editor.getSnapshot());
+      // Over the keepalive cap there is nothing useful to attempt on unload;
+      // the 800ms debounce has almost certainly already stored this.
+      if (unload && body.length > 60_000) return;
+
+      setStatus("saving");
+      try {
+        const res = await fetch(`/api/canvas/${activeId}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+          ...(unload ? { keepalive: true } : {}),
+        });
+        setStatus(res.ok ? "idle" : "error");
+      } catch {
+        // A failed save must never take the canvas down with it.
+        setStatus("error");
+      }
+    },
+    [activeId],
+  );
 
   // Persist whatever is on screen before the sheet swaps out or the tab closes.
   useEffect(() => {
-    const onHide = () => void flush();
+    const onHide = () => void flush(true);
     window.addEventListener("pagehide", onHide);
     return () => {
       window.removeEventListener("pagehide", onHide);
