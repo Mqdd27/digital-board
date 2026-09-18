@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { Check, Pencil, Plus, Trash2 } from "lucide-react";
 import type { Editor } from "tldraw";
@@ -16,6 +16,40 @@ const Tldraw = dynamic(() => import("tldraw").then((m) => m.Tldraw), {
 });
 
 const SAVE_DEBOUNCE = 800;
+
+/**
+ * tldraw arrives as its own lazily-loaded chunk, and it lazily loads more of
+ * itself when you insert media. A deploy replaces those chunk files, so a tab
+ * that was open across the deploy asks for hashes that no longer exist: the
+ * import rejects and `next/dynamic` renders *nothing*. The canvas area goes
+ * blank — on a dark theme, an alarming black rectangle that looks like lost
+ * work. Nothing is lost; the page just needs reloading. Say so instead of
+ * showing a void.
+ */
+class CanvasBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center">
+        <p className="text-sm font-medium">The canvas could not load</p>
+        <p className="max-w-sm text-xs text-muted-foreground">
+          This usually means the app was updated while this tab was open. Your drawing is safe — reload to pick up the
+          new version.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90"
+        >
+          Reload
+        </button>
+      </div>
+    );
+  }
+}
 
 export function CanvasView({
   projectId,
@@ -204,7 +238,9 @@ export function CanvasView({
       <div className="relative flex-1">
         {activeId ? (
           // Remounting per sheet is what keeps one sheet's drawing out of another.
-          <Tldraw key={activeId} onMount={(editor) => void init(editor)} className="absolute inset-0" />
+          <CanvasBoundary key={activeId}>
+            <Tldraw onMount={(editor) => void init(editor)} className="absolute inset-0" />
+          </CanvasBoundary>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <p className="text-sm text-muted-foreground">No sheets in this project yet.</p>
