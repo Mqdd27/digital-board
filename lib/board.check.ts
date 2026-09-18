@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types lib/board.check.ts
 import assert from "node:assert/strict";
-import { applyFilters, columnOf, initials, placeTask, type Column } from "./board.ts";
+import { applyFilters, columnOf, initials, placeTask, reorder, type Column } from "./board.ts";
 
 const mk = (id: string, title: string, n: number): Column["tasks"][number] => ({
   id, columnId: title, title: `task ${n}`, label: n % 2 ? "Design" : "QA",
@@ -43,5 +43,14 @@ assert.deepEqual(applyFilters(board, { label: "QA", priority: "high" }).flatMap(
 assert.equal(initials("Ada Lovelace"), "AL");
 assert.equal(initials("cher"), "C");
 assert.equal(initials("  "), "?");
+
+// column reordering — the exact call moveColumn() makes
+assert.deepEqual(reorder(["a", "b", "c"], 2, 1), ["a", "c", "b"], "moved left");
+assert.deepEqual(reorder(["a", "b", "c"], 0, 1), ["b", "a", "c"], "moved right");
+assert.deepEqual(reorder(["a", "b", "c"], 0, 2), ["b", "c", "a"], "moved to the end");
+const abc = ["a", "b", "c"];
+assert.equal(reorder(abc, 0, -1), abc, "past the left edge is a no-op");
+assert.equal(reorder(abc, 2, 3), abc, "past the right edge is a no-op");
+assert.deepEqual(abc, ["a", "b", "c"], "input not mutated");
 
 console.log("board.check ok");

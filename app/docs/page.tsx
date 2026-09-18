@@ -17,6 +17,7 @@ const TOC = [
   ["install", "Installation"],
   ["first-run", "First run"],
   ["config", "Configuration"],
+  ["migrate", "Migrating from SQLite"],
   ["deploy", "Running in production"],
   ["features", "Features"],
   ["data", "Data model"],
@@ -114,13 +115,13 @@ export default function DocsPage() {
           <p className="text-sm text-muted-foreground">
             Digital Board is a self-hosted work tracker. A kanban board with List, Calendar and Analytics views over
             the same tasks, a free-form drawing canvas with multiple sheets, and workspace chat with direct messages.
-            Everything lives in one SQLite file on your own machine.
+            Everything lives in a PostgreSQL database on your own machine.
           </p>
           <p className="text-sm text-muted-foreground">
             It is built for a team small enough to share one server: a homelab, a VPS, a machine in the office. There
             is no multi-tenancy, no background worker, no external queue, cache or object store. What it is not: a
-            hosted SaaS, and not something that scales horizontally — a second instance would not see the first
-            instance&rsquo;s SQLite file.
+            hosted SaaS. Running more than one instance is possible now that Postgres holds the data, but every
+            instance has to share <C>UPLOAD_DIR</C>, because chat attachments are files on disk.
           </p>
 
           <H id="requirements">Requirements</H>
@@ -129,16 +130,28 @@ export default function DocsPage() {
             rows={[
               [<>Node.js</>, <>22 or newer</>, <>The self-checks use <C>--experimental-strip-types</C>, which needs 22+.</>],
               [<>npm</>, <>10 or newer</>, <>Ships with Node 22.</>],
-              [<>Build toolchain</>, <>—</>, <><C>better-sqlite3</C> is native. Most platforms get a prebuilt binary; otherwise you need a C++ toolchain (<C>build-essential</C> on Debian/Ubuntu, Xcode CLT on macOS).</>],
-              [<>Disk</>, <>~500 MB</>, <>Mostly <C>node_modules</C>. The database itself starts at a few KB.</>],
+              [<>PostgreSQL</>, <>14 or newer</>, <>Verified against 16. An empty database and a role that can create tables in it is all the app needs.</>],
+              [<>Disk</>, <>~500 MB</>, <>Mostly <C>node_modules</C>. The database and uploads grow with use.</>],
             ]}
           />
 
           <H id="install">Installation</H>
-          <p className="text-sm text-muted-foreground">Clone, install, build, start. There is no database to create and no migration to run.</p>
-          <Code>{`git clone https://github.com/Mqdd27/digital-board.git
+          <p className="text-sm text-muted-foreground">
+            Create an empty database and a role for it, point <C>DATABASE_URL</C> at it, then build and start. The
+            tables create themselves on the first request — there is no migration command.
+          </p>
+          <Code>{`sudo -u postgres psql <<'SQL'
+CREATE ROLE board LOGIN PASSWORD 'choose-something';
+CREATE DATABASE board OWNER board;
+SQL
+
+git clone https://github.com/Mqdd27/digital-board.git
 cd digital-board
 npm install
+
+cp .env.example .env
+$EDITOR .env          # set DATABASE_URL
+
 npm run build
 npm start`}</Code>
           <p className="text-sm text-muted-foreground">
@@ -167,12 +180,47 @@ npm start`}</Code>
           <Table
             head={["Variable", "Default", "Purpose"]}
             rows={[
-              [<C>DATABASE_PATH</C>, <C>./db/board.sqlite</C>, <>Where the database file lives. Uploaded attachments go in an <C>uploads/</C> folder beside it, so point this at a persistent volume in Docker.</>],
+              [<C>DATABASE_URL</C>, <>—</>, <><strong className="text-foreground">Required.</strong> Postgres connection string, e.g. <C>postgres://board:pw@localhost:5432/board</C>.</>],
+              [<C>UPLOAD_DIR</C>, <C>./uploads</C>, <>Where chat attachments are written. Point this at a persistent volume in Docker.</>],
+              [<C>DATABASE_POOL_MAX</C>, <>10</>, <>Maximum Postgres connections held by the pool.</>],
               [<C>PORT</C>, <>3000</>, <>Port the server listens on.</>],
               [<C>TZ</C>, <>system</>, <>Timezone used to render timestamps. They are formatted on the server, so this decides what every user sees.</>],
               [<C>NODE_ENV</C>, <><C>production</C> via <C>npm start</C></>, <>Session cookies are marked <C>secure</C> in production, which means they require HTTPS.</>],
             ]}
           />
+
+          <H id="migrate">Migrating from SQLite</H>
+          <p className="text-sm text-muted-foreground">
+            Earlier versions stored everything in <C>db/board.sqlite</C>. The importer copies that file into Postgres.
+            It opens the SQLite file <strong className="text-foreground">read-only</strong> and never writes to it, so
+            it stays a working rollback: point an older build at it and you are exactly where you started.
+          </p>
+          <Code>{`# 1. back up first, even though the importer only reads
+cp db/board.sqlite db/board.sqlite.bak
+
+# 2. create the Postgres database, set DATABASE_URL in .env
+
+# 3. import
+DATABASE_URL=postgres://board:pw@localhost:5432/board \\
+  node scripts/sqlite-to-postgres.mjs ./db/board.sqlite
+
+# 4. check the app against the migrated data
+DATABASE_URL=postgres://board:pw@localhost:5432/board \\
+  node lib/postgres.check.mjs`}</Code>
+          <p className="text-sm text-muted-foreground">What it does and does not carry across:</p>
+          <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
+            <li>Accounts, settings, projects, columns, tasks, task history, canvas sheets, chat messages, read cursors and attachment records all move, in foreign-key order.</li>
+            <li>Attachment <em>files</em> are copied from <C>db/uploads/</C> to <C>UPLOAD_DIR</C>.</li>
+            <li><strong className="text-foreground">Login sessions are not carried over</strong> — everyone signs in once more. Carrying stale tokens across is not worth the risk.</li>
+            <li>It runs in a single transaction. If anything fails, nothing is committed.</li>
+            <li>It refuses to run against a Postgres database that already has accounts, unless you pass <C>--force</C>, so a second accidental run cannot double up.</li>
+            <li>Row counts are compared at the end and the import fails loudly if they disagree.</li>
+            <li>Identity sequences are advanced past the imported ids, so the next message or history entry does not collide with a migrated row.</li>
+          </ul>
+          <p className="text-sm text-muted-foreground">
+            Once you are satisfied, keep the <C>.sqlite</C> file somewhere for a while anyway. Deleting it is the one
+            step that cannot be undone.
+          </p>
 
           <H id="deploy">Running in production</H>
           <p className="text-sm text-muted-foreground">
@@ -191,13 +239,14 @@ npm start`}</Code>
     script: "npm",
     args: "start",
     cwd: "/srv/digital-board",
-    instances: 1,          // see the warning below — never raise this
+    instances: 1,          // safe to raise — see the note below about UPLOAD_DIR
     autorestart: true,
     max_memory_restart: "512M",
     env: {
       NODE_ENV: "production",
       PORT: 3000,
-      DATABASE_PATH: "/var/lib/digital-board/board.sqlite",
+      DATABASE_URL: "postgres://board:pw@localhost:5432/board",
+      UPLOAD_DIR: "/var/lib/digital-board/uploads",
       TZ: "Asia/Jakarta",
     },
   }],
@@ -209,11 +258,12 @@ pm2 start ecosystem.config.js
 pm2 save          # remember the process list
 pm2 startup       # print the command that re-runs pm2 at boot, then run it`}</Code>
           <p className="rounded-lg border border-[var(--chart-7)] bg-[rgba(239,68,68,0.06)] p-4 text-sm">
-            <strong className="text-foreground">Keep <C>instances: 1</C> and stay out of cluster mode.</strong> SQLite
-            is one file owned by one process. <C>-i max</C>, <C>exec_mode: &quot;cluster&quot;</C> or a second pm2 app
-            pointed at the same <C>DATABASE_PATH</C> gives you several processes writing to one database — you will get{" "}
-            <C>SQLITE_BUSY</C> under load and, with the WAL files involved, a real chance of losing writes. Scale by
-            giving the box more CPU, not more instances.
+            <strong className="text-foreground">Raising <C>instances</C> is allowed now, with one condition.</strong>{" "}
+            Postgres handles concurrent writers, so cluster mode no longer risks the database — that warning belonged
+            to the SQLite era. What is still shared state is <C>UPLOAD_DIR</C>: every instance must see the same
+            directory, or an attachment uploaded by one worker 404s from another. On a single host that is automatic.
+            Across hosts you need shared storage. Also raise <C>DATABASE_POOL_MAX</C> with care — each instance opens
+            its own pool, so total connections is instances × pool size.
           </p>
           <p className="text-sm text-muted-foreground">Day-to-day:</p>
           <Code>{`pm2 logs digital-board        # tail logs
@@ -222,8 +272,7 @@ pm2 restart digital-board     # after a rebuild
 pm2 stop digital-board        # before restoring a backup
 pm2 flush digital-board       # truncate logs`}</Code>
           <p className="text-sm text-muted-foreground">
-            Upgrading under pm2 — use <C>restart</C>, not <C>reload</C>. Reload is a zero-downtime swap that briefly
-            runs two processes, which is exactly what the warning above rules out:
+            Upgrading under pm2:
           </p>
           <Code>{`cd /srv/digital-board
 git pull
@@ -241,7 +290,8 @@ After=network.target
 WorkingDirectory=/srv/digital-board
 Environment=NODE_ENV=production
 Environment=PORT=3000
-Environment=DATABASE_PATH=/var/lib/digital-board/board.sqlite
+Environment=DATABASE_URL=postgres://board:pw@localhost:5432/board
+Environment=UPLOAD_DIR=/var/lib/digital-board/uploads
 Environment=TZ=Asia/Jakarta
 ExecStart=/usr/bin/npm start
 Restart=always
@@ -265,8 +315,8 @@ WantedBy=multi-user.target`}</Code>
   }
 }`}</Code>
           <p className="text-sm text-muted-foreground">
-            The same single-owner rule applies at the proxy: do not put this behind a load balancer with more than one
-            backend.
+            A load balancer in front of several instances works, as long as they all share <C>UPLOAD_DIR</C> and point
+            at the same Postgres.
           </p>
 
           <H id="features">Features</H>
@@ -289,8 +339,8 @@ WantedBy=multi-user.target`}</Code>
 
           <H id="data">Data model</H>
           <p className="text-sm text-muted-foreground">
-            Eleven tables, defined in <C>lib/schema.sql</C> as plain SQL. Foreign keys are on and cascade, so deleting a
-            parent row cleans up after itself.
+            Eleven tables, defined in <C>lib/schema.sql</C> as plain SQL and applied on first use. Foreign keys
+            cascade, so deleting a parent row cleans up after itself.
           </p>
           <Table
             head={["Table", "Holds"]}
@@ -305,7 +355,7 @@ WantedBy=multi-user.target`}</Code>
               [<C>canvases</C>, <>Canvas sheets and their tldraw snapshots.</>],
               [<C>messages</C>, <>Chat. A <C>NULL</C> recipient is the workspace channel; a user id is a direct message.</>],
               [<C>message_reads</C>, <>One read cursor per person per conversation, which is what drives unread badges.</>],
-              [<C>attachments</C>, <>Metadata for uploaded files. The bytes live on disk in <C>uploads/</C>.</>],
+              [<C>attachments</C>, <>Metadata for uploaded files. The bytes live on disk in <C>UPLOAD_DIR</C>, not in the database.</>],
             ]}
           />
 
@@ -327,7 +377,8 @@ WantedBy=multi-user.target`}</Code>
             </li>
             <li>
               <strong className="text-foreground">Reads are in <C>lib/queries.ts</C></strong>, writes in{" "}
-              <C>lib/actions.ts</C>. Nothing else touches SQL, which is what makes a Postgres port a contained job.
+              <C>lib/actions.ts</C>. Nothing else touches SQL. <C>lib/db.ts</C> is the only file that knows about the
+              driver, and it rewrites <C>?</C> placeholders to <C>$1</C> so the queries stay portable.
             </li>
             <li>
               <strong className="text-foreground">Auth</strong> is <C>scrypt</C> from <C>node:crypto</C> — no bcrypt
@@ -348,26 +399,27 @@ WantedBy=multi-user.target`}</Code>
             </li>
           </ul>
           <p className="text-sm text-muted-foreground">
-            The schema applies itself with <C>CREATE TABLE IF NOT EXISTS</C> on every start. Added columns go through a
-            small append-only list in <C>lib/db.ts</C> that checks <C>PRAGMA table_info</C> first. No migration command
-            exists, by design — upgrading is <C>git pull &amp;&amp; npm run build</C>.
+            The schema applies itself with <C>CREATE TABLE IF NOT EXISTS</C> on the first query of each process, and
+            columns added later sit at the bottom of <C>lib/schema.sql</C> as <C>ALTER TABLE … ADD COLUMN IF NOT
+            EXISTS</C>. No migration command exists, by design — upgrading is <C>git pull &amp;&amp; npm run build</C>.
+            Transactions bind one pooled client through <C>AsyncLocalStorage</C>, so a helper called inside{" "}
+            <C>transaction()</C> cannot accidentally run on a different connection and land outside the transaction.
           </p>
 
           <H id="backup">Backup and restore</H>
           <p className="text-sm text-muted-foreground">
-            The database runs in WAL mode, so there are usually three files: <C>board.sqlite</C>,{" "}
-            <C>board.sqlite-wal</C> and <C>board.sqlite-shm</C>. Copying only the first one while the server is running
-            gives you a backup missing the most recent writes. Use the backup command instead, which is safe on a live
-            database:
+Two things to back up: the database and the uploads directory.
           </p>
           <Code>{`# database (safe while running)
-sqlite3 /var/lib/digital-board/board.sqlite ".backup '/backups/board-$(date +%F).sqlite'"
+pg_dump --no-owner --format=custom "$DATABASE_URL" > /backups/board-$(date +%F).dump
 
-# attachments live on disk, not in the database
+# attachments are files, not rows
 tar czf /backups/uploads-$(date +%F).tar.gz -C /var/lib/digital-board uploads`}</Code>
           <p className="text-sm text-muted-foreground">
-            To restore: stop the server, put the <C>.sqlite</C> file back at <C>DATABASE_PATH</C>, delete any stale{" "}
-            <C>-wal</C> and <C>-shm</C> next to it, restore <C>uploads/</C>, start again.
+            To restore: stop the server, then{" "}
+            <C>pg_restore --clean --if-exists --no-owner -d &quot;$DATABASE_URL&quot; board-YYYY-MM-DD.dump</C>, untar
+            the uploads back into <C>UPLOAD_DIR</C>, and start again. Restore both from the same day — an attachment row
+            without its file is a dead download.
           </p>
 
           <H id="upgrade">Upgrading</H>
@@ -384,13 +436,15 @@ pm2 restart digital-board        # or: systemctl restart digital-board`}</Code>
           <Table
             head={["Symptom", "Cause and fix"]}
             rows={[
-              [<><C>SQLITE_BUSY</C></>, <>More than one process is writing to the database. The usual cause is pm2 cluster mode or a second app pointed at the same <C>DATABASE_PATH</C> — keep <C>instances: 1</C>. Otherwise look for a stray <C>sqlite3</C> session. A build alone should not trigger it; the connection opens lazily on first query.</>],
+              [<><C>ECONNREFUSED</C> or <C>password authentication failed</C> on first load</>, <>The app connects on the first request, not at build time, so a bad <C>DATABASE_URL</C> surfaces when you open a page. Check it with <C>psql &quot;$DATABASE_URL&quot; -c &apos;select 1&apos;</C>.</>],
+              [<><C>permission denied for schema public</C></>, <>On Postgres 15+ a plain role cannot create tables in a database it does not own. Make it the owner: <C>ALTER DATABASE board OWNER TO board;</C></>],
+              [<>&ldquo;too many clients already&rdquo;</>, <>instances × <C>DATABASE_POOL_MAX</C> exceeds the server&rsquo;s <C>max_connections</C>. Lower the pool or raise the limit.</>],
               [<>Signing in does nothing, bounces back to login</>, <>In production the session cookie is <C>secure</C> and needs HTTPS. Put it behind TLS, or reach it over <C>localhost</C>.</>],
               [<>Everyone shows as Offline / never signed in</>, <>Presence needs at least one authenticated request per user. A member who has never signed in has no last-seen stamp and correctly reads as offline.</>],
               [<>Attachment upload fails behind a proxy</>, <>The proxy body limit is below 10 MB. Raise <C>client_max_body_size</C> (nginx) or the equivalent.</>],
               [<>Drawing does not save, &ldquo;Save failed&rdquo; in the canvas tab bar</>, <>Same cause: the snapshot POST is being rejected upstream. Snapshots grow with the drawing and can reach several MB.</>],
               [<>Times are hours off</>, <>Timestamps render in the server&rsquo;s timezone. Set <C>TZ</C> on the service.</>],
-              [<><C>better-sqlite3</C> fails to install</>, <>No prebuilt binary for your platform. Install a C++ toolchain and reinstall.</>],
+              [<>Import says the target already has accounts</>, <>The guard against importing twice. Use a fresh database, or pass <C>--force</C> if you really mean to merge.</>],
               [<>Port already in use</>, <>Set <C>PORT</C>, or stop whatever holds 3000. Under pm2, an old copy often survives a failed deploy — check <C>pm2 status</C>.</>],
               [<>Changes not live after a deploy</>, <>pm2 runs the built output, so <C>npm run build</C> has to come before <C>pm2 restart</C>. Restarting alone re-serves the old build.</>],
             ]}
@@ -398,7 +452,7 @@ pm2 restart digital-board        # or: systemctl restart digital-board`}</Code>
 
           <H id="limits">Known limits</H>
           <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
-            <li>Single instance only. SQLite is one file owned by one process; there is no clustering story.</li>
+            <li>Attachments are local files, so more than one instance needs shared storage for <C>UPLOAD_DIR</C>.</li>
             <li>No self-service password reset. An admin creates a replacement account.</li>
             <li>Chat has no deletion, reactions, threads or typing indicators, and polling means near-real-time, not instant.</li>
             <li>Attachment files are not garbage-collected — deleting a message drops its row but leaves the blob on disk.</li>
@@ -415,9 +469,10 @@ npx tsc --noEmit
 # runnable checks, no test framework
 node --experimental-strip-types lib/board.check.ts   # pure board helpers
 node --experimental-strip-types lib/chat.check.ts    # chat poll merge
-node lib/columns.check.mjs                           # column ordering + cascades
+DATABASE_URL=... node lib/postgres.check.mjs         # every app query, against your Postgres
 
-rm -rf db          # wipe everything and start from the wizard again`}</Code>
+# wipe everything and start from the wizard again
+psql "$DATABASE_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' && rm -rf uploads`}</Code>
           <p className="text-sm text-muted-foreground">
             The checks are plain <C>node:assert</C> scripts. They cover the logic that fails quietly — index arithmetic
             when a card moves, the deduplication that stops a doubled chat poll producing duplicate React keys, and the

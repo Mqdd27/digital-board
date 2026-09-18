@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // better-sqlite3 is a native module — keep it out of the bundler.
-  serverExternalPackages: ["better-sqlite3"],
+  // pg is a server-only driver; keep it out of the bundler.
+  serverExternalPackages: ["pg"],
 };
 
 export default nextConfig;

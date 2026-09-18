@@ -23,11 +23,11 @@ export function verifyPassword(password: string, stored: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function createUser(email: string, name: string, password: string, isAdmin = false) {
+export async function createUser(email: string, name: string, password: string, isAdmin = false) {
   const id = randomUUID();
-  const n = get<{ n: number }>("SELECT COUNT(*) n FROM users")!.n;
+  const n = (await get<{ n: number }>("SELECT COUNT(*) n FROM users"))!.n;
   const color = PALETTE[n % PALETTE.length];
-  run(
+  await run(
     "INSERT INTO users (id, email, name, password_hash, color, is_admin, created_at) VALUES (?,?,?,?,?,?,?)",
     id, email.toLowerCase().trim(), name.trim(), hashPassword(password), color, isAdmin ? 1 : 0, new Date().toISOString());
   return id;
@@ -36,7 +36,7 @@ export function createUser(email: string, name: string, password: string, isAdmi
 export async function startSession(userId: string) {
   const token = randomBytes(32).toString("hex");
   const expires = new Date(Date.now() + DAYS * 864e5);
-  run("INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)", token, userId, expires.toISOString());
+  await run("INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)", token, userId, expires.toISOString());
   (await cookies()).set(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -49,7 +49,7 @@ export async function startSession(userId: string) {
 export async function endSession() {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
-  if (token) run("DELETE FROM sessions WHERE token = ?", token);
+  if (token) await run("DELETE FROM sessions WHERE token = ?", token);
   jar.delete(COOKIE);
 }
 
@@ -58,7 +58,7 @@ export async function currentUser(): Promise<User | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
 
-  const row = get<User & { expires_at: string; last_seen_at: string | null }>(
+  const row = await get<User & { expires_at: string; last_seen_at: string | null }>(
     `SELECT u.id, u.email, u.name, u.color, u.is_admin, u.last_seen_at, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token = ?`,
@@ -67,27 +67,27 @@ export async function currentUser(): Promise<User | null> {
 
   if (!row) return null;
   if (new Date(row.expires_at) < new Date()) {
-    run("DELETE FROM sessions WHERE token = ?", token);
+    await run("DELETE FROM sessions WHERE token = ?", token);
     return null;
   }
 
   // Presence heartbeat. Every authenticated request counts, not just chat —
   // otherwise someone who never opens Chat reads as "never signed in".
   // Throttled so a burst of requests is one write.
-  touch(row.id, row.last_seen_at);
+  await touch(row.id, row.last_seen_at);
   return { id: row.id, email: row.email, name: row.name, color: row.color, is_admin: row.is_admin };
 }
 
 const HEARTBEAT_MS = 45_000;
 
 /** Stamp last_seen_at, at most once per HEARTBEAT_MS per user. */
-export function touch(userId: string, lastSeen: string | null) {
+export async function touch(userId: string, lastSeen: string | null) {
   if (lastSeen && Date.now() - new Date(lastSeen).getTime() < HEARTBEAT_MS) return;
-  run("UPDATE users SET last_seen_at = ? WHERE id = ?", new Date().toISOString(), userId);
+  await run("UPDATE users SET last_seen_at = ? WHERE id = ?", new Date().toISOString(), userId);
 }
 
-export function login(email: string, password: string) {
-  const row = get<{ id: string; password_hash: string }>(
+export async function login(email: string, password: string) {
+  const row = await get<{ id: string; password_hash: string }>(
     "SELECT id, password_hash FROM users WHERE email = ?",
     email.toLowerCase().trim(),
   );

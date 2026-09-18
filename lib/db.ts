@@ -1,65 +1,89 @@
 import "server-only";
-import Database from "better-sqlite3";
-import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import pg from "pg";
 
-// ponytail: SQLite is the right default for a self-hosted single-instance app.
-// Moving to Postgres means replacing this module and keeping lib/schema.sql —
-// every query already lives in lib/queries.ts and lib/actions.ts.
-const FILE = process.env.DATABASE_PATH ?? join(process.cwd(), "db", "board.sqlite");
+const { Pool, types } = pg;
 
-/** Uploaded files live beside the database so one volume holds all the state. */
-export const UPLOAD_DIR = join(dirname(FILE), "uploads");
+// int8 (COUNT, SUM) arrives as a string by default, which silently turns
+// `count > 0` into a string comparison. Every count here fits in a JS number.
+types.setTypeParser(20, Number);
+
+/** Uploaded files. Not in the database — see docs for moving this to a volume. */
+export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? join(process.cwd(), "uploads");
 
 declare global {
-  var __boardDb: Database.Database | undefined;
+  var __boardPool: pg.Pool | undefined;
+  var __boardReady: Promise<void> | undefined;
 }
 
-function open() {
-  mkdirSync(dirname(FILE), { recursive: true });
-  const conn = new Database(FILE);
-  // Build workers and dev hot-reloads can touch the file at the same moment.
-  conn.pragma("busy_timeout = 5000");
-  conn.pragma("journal_mode = WAL");
-  conn.pragma("foreign_keys = ON");
-  conn.exec(readFileSync(join(process.cwd(), "lib", "schema.sql"), "utf8"));
-  migrate(conn);
-  return conn;
+function pool() {
+  return (globalThis.__boardPool ??= new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+  }));
+}
+
+/** Schema applied once per process, on the first query. */
+function ready() {
+  return (globalThis.__boardReady ??= pool()
+    .query(readFileSync(join(process.cwd(), "lib", "schema.sql"), "utf8"))
+    .then(() => undefined));
 }
 
 /**
- * `CREATE TABLE IF NOT EXISTS` covers new tables but not new columns on an
- * existing one, so added columns are applied here. Keep entries append-only —
- * an installed database may be at any earlier point in this list.
+ * Binds one client for the duration of a transaction, so every helper called
+ * inside `transaction()` — however deeply — runs on that same connection
+ * instead of grabbing a fresh one from the pool and landing outside the tx.
  */
-function migrate(conn: Database.Database) {
-  const added: [table: string, column: string, ddl: string][] = [
-    ["users", "last_seen_at", "ALTER TABLE users ADD COLUMN last_seen_at TEXT"],
-    ["messages", "edited_at", "ALTER TABLE messages ADD COLUMN edited_at TEXT"],
-  ];
-  for (const [table, column, ddl] of added) {
-    const cols = conn.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-    if (!cols.some((c) => c.name === column)) conn.exec(ddl);
+const tx = new AsyncLocalStorage<pg.PoolClient>();
+
+/**
+ * Call sites keep SQLite's `?` placeholders; Postgres wants `$1`, `$2`.
+ * Rewriting here means the ~80 queries did not have to be touched.
+ * ponytail: naive scan — a literal `?` inside a string literal would be
+ * rewritten too. None of the queries contain one; add quote-awareness if that
+ * ever changes.
+ */
+function toPg(sql: string) {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
+}
+
+async function query<T extends pg.QueryResultRow>(sql: string, args: unknown[]) {
+  await ready();
+  const client = tx.getStore();
+  const text = toPg(sql);
+  return client ? client.query<T>(text, args) : pool().query<T>(text, args);
+}
+
+export const get = async <T>(sql: string, ...args: unknown[]) =>
+  (await query<pg.QueryResultRow>(sql, args)).rows[0] as T | undefined;
+
+export const all = async <T>(sql: string, ...args: unknown[]) =>
+  (await query<pg.QueryResultRow>(sql, args)).rows as T[];
+
+export const run = async (sql: string, ...args: unknown[]) => {
+  await query<pg.QueryResultRow>(sql, args);
+};
+
+/** Runs `fn` in a transaction. Rolls back on throw. */
+export async function transaction<T>(fn: () => Promise<T>): Promise<T> {
+  await ready();
+  const client = await pool().connect();
+  try {
+    await client.query("BEGIN");
+    const out = await tx.run(client, fn);
+    await client.query("COMMIT");
+    return out;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
   }
 }
 
-/**
- * Opened on first query, never at import. Importing this module during
- * `next build` must not create a database file or contend on WAL setup.
- */
-export function getDb() {
-  return (globalThis.__boardDb ??= open());
-}
-
 /** True once the first account exists — the setup-wizard gate. */
-export function isInstalled() {
-  return get("SELECT 1 FROM users LIMIT 1") !== undefined;
-}
-
-// Thin typed wrappers. better-sqlite3's own generics are awkward; these keep
-// call sites readable and are the only place a cast lives.
-type Args = unknown[];
-export const get = <T>(sql: string, ...args: Args) => getDb().prepare(sql).get(...(args as never[])) as T | undefined;
-export const all = <T>(sql: string, ...args: Args) => getDb().prepare(sql).all(...(args as never[])) as T[];
-export const run = (sql: string, ...args: Args) => getDb().prepare(sql).run(...(args as never[]));
-export const transaction = (fn: () => void) => getDb().transaction(fn)();
+export const isInstalled = async () => (await get("SELECT 1 FROM users LIMIT 1")) !== undefined;

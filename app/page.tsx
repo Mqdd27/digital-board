@@ -16,7 +16,7 @@ const FEATURES = [
 ];
 
 export default async function Home() {
-  const installed = isInstalled();
+  const installed = await isInstalled();
   const cta = installed ? { href: "/board", label: "Open board" } : { href: "/setup", label: "Start setup" };
 
   return (

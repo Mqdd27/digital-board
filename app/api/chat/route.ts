@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
-import { getDb, run, UPLOAD_DIR } from "@/lib/db";
+import { get, run, UPLOAD_DIR } from "@/lib/db";
 import { conversation, listMembersWithPresence, markRead, unreadCounts } from "@/lib/queries";
 
 /**
@@ -27,13 +27,13 @@ export async function GET(req: Request) {
   const after = Number(url.searchParams.get("after") ?? 0) || 0;
 
   // Viewing a conversation is what marks it read.
-  markRead(me.id, withUser);
+  await markRead(me.id, withUser);
 
   return NextResponse.json(
     {
-      messages: conversation(me.id, withUser, after),
-      members: listMembersWithPresence(),
-      unread: unreadCounts(me.id),
+      messages: await conversation(me.id, withUser, after),
+      members: await listMembersWithPresence(),
+      unread: await unreadCounts(me.id),
       me: me.id,
     },
     { headers: { "cache-control": "no-store" } },
@@ -77,14 +77,15 @@ export async function POST(req: Request) {
   );
 
   const now = new Date().toISOString();
-  const info = run(
-    "INSERT INTO messages (author_id, recipient_id, body, created_at) VALUES (?,?,?,?)",
+  // Postgres has no lastInsertRowid — RETURNING is the portable way back.
+  const inserted = await get<{ id: number }>(
+    "INSERT INTO messages (author_id, recipient_id, body, created_at) VALUES (?,?,?,?) RETURNING id",
     me.id, to && to !== "all" ? to : null, text, now,
   );
-  const messageId = Number(info.lastInsertRowid);
+  const messageId = inserted!.id;
 
   for (const f of saved) {
-    run(
+    await run(
       "INSERT INTO attachments (id, message_id, name, mime, size, created_at) VALUES (?,?,?,?,?,?)",
       f.id, messageId, f.name, f.mime, f.size, now,
     );
@@ -102,9 +103,10 @@ export async function PATCH(req: Request) {
   if (!id || !text) return new NextResponse("Bad request", { status: 400 });
   if (text.length > MAX_BODY) return new NextResponse("Message too long", { status: 413 });
 
-  const row = getDb()
-    .prepare("SELECT author_id, created_at FROM messages WHERE id = ?")
-    .get(id) as { author_id: string; created_at: string } | undefined;
+  const row = await get<{ author_id: string; created_at: string }>(
+    "SELECT author_id, created_at FROM messages WHERE id = ?",
+    id,
+  );
 
   if (!row) return new NextResponse("Not found", { status: 404 });
   if (row.author_id !== me.id) return new NextResponse("Not your message", { status: 403 });
@@ -112,6 +114,6 @@ export async function PATCH(req: Request) {
     return new NextResponse("Edit window closed", { status: 403 });
   }
 
-  run("UPDATE messages SET body = ?, edited_at = ? WHERE id = ?", text, new Date().toISOString(), id);
+  await run("UPDATE messages SET body = ?, edited_at = ? WHERE id = ?", text, new Date().toISOString(), id);
   return new NextResponse(null, { status: 204 });
 }

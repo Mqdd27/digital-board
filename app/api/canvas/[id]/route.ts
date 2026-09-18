@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!(await guard())) return new NextResponse("Unauthorized", { status: 401 });
 
   const { id } = await params;
-  const row = get<{ snapshot: string | null }>("SELECT snapshot FROM canvases WHERE id = ?", id);
+  const row = await get<{ snapshot: string | null }>("SELECT snapshot FROM canvases WHERE id = ?", id);
   if (!row) return new NextResponse("Not found", { status: 404 });
 
   // Already JSON on disk — hand it back verbatim rather than parse-then-restringify.
@@ -31,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!(await guard())) return new NextResponse("Unauthorized", { status: 401 });
 
   const { id } = await params;
-  if (!get("SELECT 1 FROM canvases WHERE id = ?", id)) return new NextResponse("Not found", { status: 404 });
+  if (!(await get("SELECT 1 FROM canvases WHERE id = ?", id))) return new NextResponse("Not found", { status: 404 });
 
   const snapshot = await req.text();
   try {
@@ -40,6 +40,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return new NextResponse("Invalid snapshot", { status: 400 });
   }
 
-  run("UPDATE canvases SET snapshot = ?, updated_at = ? WHERE id = ?", snapshot, new Date().toISOString(), id);
+  await run("UPDATE canvases SET snapshot = ?, updated_at = ? WHERE id = ?", snapshot, new Date().toISOString(), id);
   return new NextResponse(null, { status: 204 });
 }

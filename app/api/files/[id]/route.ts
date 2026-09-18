@@ -10,7 +10,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!(await currentUser())) return new NextResponse("Unauthorized", { status: 401 });
 
   const { id } = await params;
-  const row = get<{ name: string; mime: string }>("SELECT name, mime FROM attachments WHERE id = ?", id);
+  const row = await get<{ name: string; mime: string }>("SELECT name, mime FROM attachments WHERE id = ?", id);
   if (!row) return new NextResponse("Not found", { status: 404 });
 
   // The id is a uuid from the row, never user input, so the path cannot escape.

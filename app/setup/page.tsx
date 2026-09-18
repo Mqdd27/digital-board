@@ -6,8 +6,8 @@ import { SetupForm } from "@/components/setup-form";
 
 export const metadata = { title: "Setup — Digital Board" };
 
-export default function SetupPage() {
-  if (isInstalled()) redirect("/login");
+export default async function SetupPage() {
+  if (await isInstalled()) redirect("/login");
 
   return (
     <main className="flex flex-1 items-center justify-center px-6 py-12">

@@ -11,7 +11,7 @@ export async function GET() {
   if (!me) return new NextResponse("Unauthorized", { status: 401 });
 
   return NextResponse.json(
-    { members: listMembersWithPresence(), unread: unreadCounts(me.id) },
+    { members: await listMembersWithPresence(), unread: await unreadCounts(me.id) },
     { headers: { "cache-control": "no-store" } },
   );
 }

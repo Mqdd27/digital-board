@@ -36,12 +36,12 @@ export const firstProject = () => get<Project>("SELECT id, name FROM projects OR
 
 export const listMembers = () => all<Member>("SELECT id, name, color FROM users ORDER BY created_at");
 
-export function getBoard(projectId: string): Column[] {
-  const columns = all<{ id: string; title: string; color: string }>(
+export async function getBoard(projectId: string): Promise<Column[]> {
+  const columns = await all<{ id: string; title: string; color: string }>(
     "SELECT id, title, color FROM columns WHERE project_id = ? ORDER BY position",
     projectId,
   );
-  const rows = all<TaskRow>(
+  const rows = await all<TaskRow>(
     `SELECT t.id, t.column_id, t.title, t.label, t.priority, t.due_date,
             u.id AS assignee_id, u.name AS assignee_name, u.color AS assignee_color
        FROM tasks t
@@ -54,18 +54,18 @@ export function getBoard(projectId: string): Column[] {
   return columns.map((c) => ({ ...c, tasks: rows.filter((r) => r.column_id === c.id).map(toTask) }));
 }
 
-export const taskHistory = (taskId: string): Entry[] =>
-  all<Omit<Entry, "atLabel">>(
+export const taskHistory = async (taskId: string): Promise<Entry[]> =>
+  (await all<Omit<Entry, "atLabel">>(
     `SELECT e.at, e.text, u.name AS actor
        FROM task_events e LEFT JOIN users u ON u.id = e.actor_id
       WHERE e.task_id = ? ORDER BY e.id DESC`,
     taskId,
-  ).map((e) => ({ ...e, atLabel: stamp(e.at) }));
+  )).map((e) => ({ ...e, atLabel: stamp(e.at) }));
 
 export type FeedItem = Entry & { taskId: string; taskTitle: string; columnTitle: string; columnColor: string; dayLabel: string };
 
-export const activityFeed = (limit = 100): FeedItem[] =>
-  all<Omit<FeedItem, "atLabel" | "dayLabel">>(
+export const activityFeed = async (limit = 100): Promise<FeedItem[]> =>
+  (await all<Omit<FeedItem, "atLabel" | "dayLabel">>(
     `SELECT e.at, e.text, u.name AS actor, t.id AS taskId, t.title AS taskTitle,
             c.title AS columnTitle, c.color AS columnColor
        FROM task_events e
@@ -74,10 +74,10 @@ export const activityFeed = (limit = 100): FeedItem[] =>
        LEFT JOIN users u ON u.id = e.actor_id
       ORDER BY e.id DESC LIMIT ?`,
     limit,
-  ).map((e) => ({ ...e, atLabel: stamp(e.at), dayLabel: day(e.at) }));
+  )).map((e) => ({ ...e, atLabel: stamp(e.at), dayLabel: day(e.at) }));
 
-export const myTasks = (userId: string) =>
-  all<TaskRow & { column_title: string; column_color: string; project_name: string }>(
+export const myTasks = async (userId: string) =>
+  (await all<TaskRow & { column_title: string; column_color: string; project_name: string }>(
     `SELECT t.id, t.column_id, t.title, t.label, t.priority, t.due_date,
             u.id AS assignee_id, u.name AS assignee_name, u.color AS assignee_color,
             c.title AS column_title, c.color AS column_color, p.name AS project_name
@@ -88,30 +88,30 @@ export const myTasks = (userId: string) =>
       WHERE t.assignee_id = ?
       ORDER BY t.due_date IS NULL, t.due_date, t.position`,
     userId,
-  ).map((r) => ({ ...toTask(r), columnTitle: r.column_title, columnColor: r.column_color, projectName: r.project_name }));
+  )).map((r) => ({ ...toTask(r), columnTitle: r.column_title, columnColor: r.column_color, projectName: r.project_name }));
 
-export function analytics(projectId: string) {
-  const byColumn = all<{ title: string; color: string; n: number }>(
+export async function analytics(projectId: string) {
+  const byColumn = await all<{ title: string; color: string; n: number }>(
     `SELECT c.title, c.color, COUNT(t.id) n
        FROM columns c LEFT JOIN tasks t ON t.column_id = c.id
       WHERE c.project_id = ? GROUP BY c.id ORDER BY c.position`,
     projectId,
   );
-  const byPriority = all<{ priority: Priority; n: number }>(
+  const byPriority = await all<{ priority: Priority; n: number }>(
     `SELECT t.priority, COUNT(*) n FROM tasks t JOIN columns c ON c.id = t.column_id
       WHERE c.project_id = ? GROUP BY t.priority`,
     projectId,
   );
-  const byAssignee = all<{ name: string | null; color: string | null; n: number }>(
+  const byAssignee = await all<{ name: string | null; color: string | null; n: number }>(
     `SELECT u.name, u.color, COUNT(*) n FROM tasks t
        JOIN columns c ON c.id = t.column_id LEFT JOIN users u ON u.id = t.assignee_id
-      WHERE c.project_id = ? GROUP BY t.assignee_id ORDER BY n DESC`,
+      WHERE c.project_id = ? GROUP BY t.assignee_id, u.name, u.color ORDER BY n DESC`,
     projectId,
   );
-  const activity14d = all<{ day: string; n: number }>(
-    `SELECT substr(e.at, 1, 10) day, COUNT(*) n FROM task_events e
+  const activity14d = await all<{ day: string; n: number }>(
+    `SELECT substr(e.at, 1, 10) AS day, COUNT(*) n FROM task_events e
        JOIN tasks t ON t.id = e.task_id JOIN columns c ON c.id = t.column_id
-      WHERE c.project_id = ? AND e.at >= date('now', '-13 days')
+      WHERE c.project_id = ? AND e.at >= to_char(now() - interval '13 days', 'YYYY-MM-DD')
       GROUP BY day ORDER BY day`,
     projectId,
   );
@@ -140,10 +140,10 @@ function presenceOf(lastSeen: string | null): Presence {
   return mins < 2 ? "online" : mins < 15 ? "away" : "offline";
 }
 
-export const listMembersWithPresence = (): MemberPresence[] =>
-  all<Member & { email: string; is_admin: number; last_seen_at: string | null }>(
+export const listMembersWithPresence = async (): Promise<MemberPresence[]> =>
+  (await all<Member & { email: string; is_admin: number; last_seen_at: string | null }>(
     "SELECT id, name, color, email, is_admin, last_seen_at FROM users ORDER BY created_at",
-  ).map((u) => ({ ...u, lastSeen: u.last_seen_at, presence: presenceOf(u.last_seen_at) }));
+  )).map((u) => ({ ...u, lastSeen: u.last_seen_at, presence: presenceOf(u.last_seen_at) }));
 
 export type Attachment = { id: string; name: string; mime: string; size: number };
 
@@ -162,15 +162,15 @@ export type ChatMessage = {
 export const channelKey = (withUser: string | null) => withUser ?? "all";
 
 /** `withUser` null means the workspace channel; otherwise the DM thread with that person. */
-export function conversation(meId: string, withUser: string | null, afterId = 0): ChatMessage[] {
+export async function conversation(meId: string, withUser: string | null, afterId = 0): Promise<ChatMessage[]> {
   const base = `SELECT m.id, m.body, m.created_at, m.edited_at, m.author_id,
                        u.name AS author_name, u.color AS author_color
                   FROM messages m JOIN users u ON u.id = m.author_id
                  WHERE m.id > ? AND `;
   const rows =
     withUser === null
-      ? all<Omit<ChatMessage, "attachments">>(`${base} m.recipient_id IS NULL ORDER BY m.id LIMIT 200`, afterId)
-      : all<Omit<ChatMessage, "attachments">>(
+      ? await all<Omit<ChatMessage, "attachments">>(`${base} m.recipient_id IS NULL ORDER BY m.id LIMIT 200`, afterId)
+      : await all<Omit<ChatMessage, "attachments">>(
           `${base} ((m.author_id = ? AND m.recipient_id = ?) OR (m.author_id = ? AND m.recipient_id = ?))
             ORDER BY m.id LIMIT 200`,
           afterId, meId, withUser, withUser, meId,
@@ -178,20 +178,20 @@ export function conversation(meId: string, withUser: string | null, afterId = 0)
   if (rows.length === 0) return [];
 
   const ids = rows.map((r) => r.id);
-  const files = all<Attachment & { message_id: number }>(
+  const files = await all<Attachment & { message_id: number }>(
     `SELECT id, message_id, name, mime, size FROM attachments
-      WHERE message_id IN (${ids.map(() => "?").join(",")}) ORDER BY rowid`,
+      WHERE message_id IN (${ids.map(() => "?").join(",")}) ORDER BY created_at, id`,
     ...ids,
   );
   return rows.map((r) => ({ ...r, attachments: files.filter((f) => f.message_id === r.id) }));
 }
 
 /** Highest message id in a conversation — the value the read cursor moves to. */
-export function latestId(meId: string, withUser: string | null) {
+export async function latestId(meId: string, withUser: string | null) {
   const row =
     withUser === null
-      ? get<{ id: number }>("SELECT MAX(id) id FROM messages WHERE recipient_id IS NULL")
-      : get<{ id: number }>(
+      ? await get<{ id: number }>("SELECT MAX(id) id FROM messages WHERE recipient_id IS NULL")
+      : await get<{ id: number }>(
           `SELECT MAX(id) id FROM messages
             WHERE (author_id = ? AND recipient_id = ?) OR (author_id = ? AND recipient_id = ?)`,
           meId, withUser, withUser, meId,
@@ -205,20 +205,20 @@ export type Unread = { channel: string; n: number };
  * Unread per conversation for one user. Own messages never count, and a
  * conversation with no read cursor yet counts everything in it.
  */
-export function unreadCounts(meId: string): Unread[] {
+export async function unreadCounts(meId: string): Promise<Unread[]> {
   const cursors = new Map(
-    all<{ channel: string; last_read_id: number }>(
+    (await all<{ channel: string; last_read_id: number }>(
       "SELECT channel, last_read_id FROM message_reads WHERE user_id = ?",
       meId,
-    ).map((r) => [r.channel, r.last_read_id]),
+    )).map((r) => [r.channel, r.last_read_id]),
   );
 
-  const channel = all<{ n: number }>(
+  const channel = (await all<{ n: number }>(
     "SELECT COUNT(*) n FROM messages WHERE recipient_id IS NULL AND author_id != ? AND id > ?",
     meId, cursors.get("all") ?? 0,
-  )[0]!.n;
+  ))[0]!.n;
 
-  const dms = all<{ channel: string; id: number }>(
+  const dms = await all<{ channel: string; id: number }>(
     "SELECT author_id AS channel, id FROM messages WHERE recipient_id = ?",
     meId,
   );
@@ -231,12 +231,12 @@ export function unreadCounts(meId: string): Unread[] {
   return out;
 }
 
-export function markRead(meId: string, withUser: string | null) {
-  const upTo = latestId(meId, withUser);
+export async function markRead(meId: string, withUser: string | null) {
+  const upTo = await latestId(meId, withUser);
   if (upTo === 0) return;
-  run(
+  await run(
     `INSERT INTO message_reads (user_id, channel, last_read_id) VALUES (?,?,?)
-     ON CONFLICT(user_id, channel) DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id)`,
+     ON CONFLICT (user_id, channel) DO UPDATE SET last_read_id = GREATEST(message_reads.last_read_id, excluded.last_read_id)`,
     meId, channelKey(withUser), upTo,
   );
 }

@@ -7,7 +7,7 @@ import { LoginForm } from "@/components/login-form";
 export const metadata = { title: "Sign in — Digital Board" };
 
 export default async function LoginPage() {
-  if (!isInstalled()) redirect("/setup");
+  if (!(await isInstalled())) redirect("/setup");
   if (await currentUser()) redirect("/board");
 
   return (

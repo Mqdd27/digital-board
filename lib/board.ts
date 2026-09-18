@@ -74,6 +74,14 @@ export function placeTask(columns: Column[], taskId: string, to: string, index: 
   });
 }
 
+/** Move `from` to `to` in a list of ids. Used for column reordering. */
+export function reorder<T>(ids: T[], from: number, to: number): T[] {
+  if (from < 0 || to < 0 || from >= ids.length || to >= ids.length) return ids;
+  const next = [...ids];
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}
+
 export type Filters = { q?: string; assignee?: string; priority?: string; label?: string };
 
 /** Filtering runs client-side over the already-loaded board. */
