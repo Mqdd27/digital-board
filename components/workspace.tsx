@@ -46,7 +46,7 @@ const SECTIONS: { key: SectionKey; Icon: typeof Home; label: string }[] = [
 ];
 
 export function Workspace({
-  user, workspace, projects, project, columns, members, presence, feed, mine, stats, sheets, today, dark,
+  user, workspace, projects, project, columns, members, presence, feed, notifications: initialNotifications, mine, stats, sheets, today, dark,
 }: {
   user: User;
   workspace: string;
@@ -55,6 +55,7 @@ export function Workspace({
   columns: Column[];
   members: Member[];
   feed: FeedItem[];
+  notifications: FeedItem[];
   mine: MyTask[];
   stats: Stats | null;
   sheets: CanvasMeta[];
@@ -70,6 +71,9 @@ export function Workspace({
   const [showFilters, setShowFilters] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [creating, setCreating] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState(initialNotifications);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [chatChannel, setChatChannel] = useState("all");
 
   const filtered = useMemo(() => applyFilters(columns, filters), [columns, filters]);
   const activeFilters = [filters.assignee, filters.priority, filters.label].filter(Boolean).length;
@@ -88,9 +92,10 @@ export function Workspace({
       try {
         const res = await fetch("/api/presence", { cache: "no-store" });
         if (!res.ok || !alive) return;
-        const data = (await res.json()) as { members: MemberPresence[]; unread: Unread[] };
+        const data = (await res.json()) as { members: MemberPresence[]; unread: Unread[]; notifications: FeedItem[] };
         setLive(data.members);
         setUnread(data.unread);
+        setNotifications(data.notifications);
       } catch {
         // Offline for a tick; the next one recovers.
       }
@@ -105,6 +110,11 @@ export function Workspace({
 
   const online = live.filter((m) => m.presence === "online").length;
   const unreadTotal = section === "chat" ? 0 : unread.reduce((n, u) => n + u.n, 0);
+
+  function markNotificationsRead() {
+    setNotifications([]);
+    void fetch("/api/presence", { method: "POST" });
+  }
 
   const close = () => {
     setEditing(null);
@@ -130,7 +140,10 @@ export function Workspace({
           {SECTIONS.map(({ key, Icon, label }) => (
             <button
               key={key}
-              onClick={() => setSection(key)}
+              onClick={() => {
+                setSection(key);
+                if (key === "chat") setChatChannel("all");
+              }}
               className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-all ${
                 section === key ? "bg-secondary font-medium text-foreground" : "text-muted-foreground"
               }`}
@@ -264,13 +277,41 @@ export function Workspace({
               </>
             )}
             <ThemeToggle />
-            <button
-              onClick={() => setSection("inbox")}
-              className="relative rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              <Bell className="size-4" />
-              {feed.length > 0 && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-[var(--chart-7)]" />}
-            </button>
+            <div className="relative">
+              <button
+                aria-label="Notifications"
+                aria-expanded={showNotifications}
+                aria-haspopup="menu"
+                onClick={() => setShowNotifications((open) => !open)}
+                className="relative rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <Bell className="size-4" />
+                {(notifications.length > 0 || unread.length > 0) && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-[var(--chart-7)]" />}
+              </button>
+              {showNotifications && (
+                <NotificationMenu
+                  cards={notifications}
+                  unread={unread}
+                  members={live}
+                  onOpenInbox={() => {
+                    markNotificationsRead();
+                    setShowNotifications(false);
+                    setSection("inbox");
+                  }}
+                  onOpenChat={(channel) => {
+                    setUnread((items) => items.filter((item) => item.channel !== channel));
+                    setChatChannel(channel);
+                    setShowNotifications(false);
+                    setSection("chat");
+                  }}
+                  onMarkRead={markNotificationsRead}
+                  onOpenInboxPage={() => {
+                    setShowNotifications(false);
+                    setSection("inbox");
+                  }}
+                />
+              )}
+            </div>
             {project && section !== "canvas" && (
               <button
                 onClick={() => setCreating(columns[0]?.id ?? "")}
@@ -344,7 +385,7 @@ export function Workspace({
             onGo={setSection}
           />
         ) : section === "chat" ? (
-          <ChatView meId={user.id} initialMembers={live} />
+          <ChatView key={chatChannel} meId={user.id} initialMembers={live} initialChannel={chatChannel} />
         ) : section === "settings" ? (
           <MembersPanel presence={live} isAdmin={user.is_admin === 1} projects={projects} activeProjectId={project?.id ?? null} />
         ) : !project ? (
@@ -399,8 +440,8 @@ function FeedView({ feed }: { feed: FeedItem[] }) {
   return (
     <main className="flex-1 overflow-y-auto">
       <ul className="mx-auto max-w-2xl divide-y px-5 py-6">
-        {feed.map((e, i) => (
-          <li key={i} className="flex items-start gap-3 py-3">
+        {feed.map((e) => (
+          <li key={e.id} className="flex items-start gap-3 py-3">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium leading-snug">{e.taskTitle}</p>
               <p className="text-xs text-muted-foreground">
@@ -421,5 +462,53 @@ function FeedView({ feed }: { feed: FeedItem[] }) {
         ))}
       </ul>
     </main>
+  );
+}
+
+function NotificationMenu({
+  cards, unread, members, onOpenInbox, onOpenChat, onMarkRead, onOpenInboxPage,
+}: {
+  cards: FeedItem[];
+  unread: Unread[];
+  members: MemberPresence[];
+  onOpenInbox: () => void;
+  onOpenChat: (channel: string) => void;
+  onMarkRead: () => void;
+  onOpenInboxPage: () => void;
+}) {
+  return (
+    <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-lg border bg-card shadow-lg">
+      <div className="max-h-80 overflow-y-auto p-1">
+        {cards.length > 0 && (
+          <>
+            <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Card notifications</p>
+            {cards.map((item) => (
+              <button key={item.id} role="menuitem" onClick={onOpenInbox} className="w-full rounded-md px-2 py-2 text-left hover:bg-secondary">
+                <p className="truncate text-xs font-medium">{item.taskTitle}</p>
+                <p className="truncate text-[11px] text-muted-foreground">{item.text}{item.actor ? ` · ${item.actor}` : ""}</p>
+              </button>
+            ))}
+          </>
+        )}
+        {unread.length > 0 && (
+          <>
+            <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Chat notifications</p>
+            {unread.map((item) => (
+              <button key={item.channel} role="menuitem" onClick={() => onOpenChat(item.channel)} className="w-full rounded-md px-2 py-2 text-left hover:bg-secondary">
+                <p className="text-xs font-medium">{item.channel === "all" ? "Workspace" : members.find((member) => member.id === item.channel)?.name ?? "Direct message"}</p>
+                <p className="text-[11px] text-muted-foreground">{item.n} new message{item.n === 1 ? "" : "s"}</p>
+              </button>
+            ))}
+          </>
+        )}
+        {cards.length === 0 && unread.length === 0 && (
+          <p className="px-2 py-4 text-center text-xs text-muted-foreground">No unread notifications.</p>
+        )}
+      </div>
+      <div className="flex border-t p-1">
+        {cards.length > 0 && <button onClick={onMarkRead} className="rounded px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary">Mark cards read</button>}
+        <button onClick={onOpenInboxPage} className="ml-auto rounded px-2 py-1.5 text-xs font-medium hover:bg-secondary">Open inbox</button>
+      </div>
+    </div>
   );
 }

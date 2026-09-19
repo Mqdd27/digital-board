@@ -43,6 +43,7 @@ Requires **Node 22+** and **PostgreSQL 14+** (verified on 16). For development,
 | **History** | Every move, reorder and field change is logged with its actor. Per task, and board-wide in the Inbox. |
 | **Canvas** | Excalidraw with sheet tabs. Each sheet keeps its own drawing. |
 | **Chat** | Workspace channel plus direct messages, with unread badges, attachments and a 15-minute edit window. |
+| **Notifications** | Bell dropdown combines unread card activity and chat. Card items open Inbox; chat items open their conversation; card items can be marked read. |
 | **Accounts** | Multi-user with `scrypt` password hashing and cookie sessions. Presence shows who is online. |
 
 ## Configuration

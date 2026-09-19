@@ -64,11 +64,13 @@ export const taskHistory = async (taskId: string): Promise<Entry[]> =>
     taskId,
   )).map((e) => ({ ...e, atLabel: stamp(e.at) }));
 
-export type FeedItem = Entry & { taskId: string; taskTitle: string; columnTitle: string; columnColor: string; dayLabel: string };
+export type FeedItem = Entry & { id: number; taskId: string; taskTitle: string; columnTitle: string; columnColor: string; dayLabel: string };
+type FeedRow = Omit<FeedItem, "atLabel" | "dayLabel">;
+
 
 export const activityFeed = async (limit = 100): Promise<FeedItem[]> =>
-  (await all<Omit<FeedItem, "atLabel" | "dayLabel">>(
-    `SELECT e.at, e.text, u.name AS actor, t.id AS taskId, t.title AS taskTitle,
+  (await all<FeedRow>(
+    `SELECT e.id, e.at, e.text, u.name AS actor, t.id AS taskId, t.title AS taskTitle,
             c.title AS columnTitle, c.color AS columnColor
        FROM task_events e
        JOIN tasks t ON t.id = e.task_id
@@ -77,6 +79,29 @@ export const activityFeed = async (limit = 100): Promise<FeedItem[]> =>
       ORDER BY e.id DESC LIMIT ?`,
     limit,
   )).map((e) => ({ ...e, atLabel: stamp(e.at), dayLabel: day(e.at) }));
+
+export const activityNotifications = async (userId: string, limit = 5): Promise<FeedItem[]> => {
+  const read = (await get<{ last_activity_read_id: number }>(
+    "SELECT last_activity_read_id FROM users WHERE id = ?",
+    userId,
+  ))?.last_activity_read_id ?? 0;
+  return (await all<FeedRow>(
+    `SELECT e.id, e.at, e.text, u.name AS actor, t.id AS taskId, t.title AS taskTitle,
+            c.title AS columnTitle, c.color AS columnColor
+       FROM task_events e
+       JOIN tasks t ON t.id = e.task_id
+       JOIN columns c ON c.id = t.column_id
+       LEFT JOIN users u ON u.id = e.actor_id
+      WHERE e.id > ? AND e.actor_id IS DISTINCT FROM ?
+      ORDER BY e.id DESC LIMIT ?`,
+    read, userId, limit,
+  )).map((e) => ({ ...e, atLabel: stamp(e.at), dayLabel: day(e.at) }));
+};
+
+export async function markActivityRead(userId: string) {
+  const upTo = (await get<{ id: number }>("SELECT COALESCE(MAX(id), 0) id FROM task_events"))!.id;
+  await run("UPDATE users SET last_activity_read_id = GREATEST(last_activity_read_id, ?) WHERE id = ?", upTo, userId);
+}
 
 export const myTasks = async (userId: string) =>
   (await all<TaskRow & { column_title: string; column_color: string; project_name: string }>(

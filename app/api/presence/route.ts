@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
-import { listMembersWithPresence, unreadCounts } from "@/lib/queries";
+import { activityNotifications, listMembersWithPresence, markActivityRead, unreadCounts } from "@/lib/queries";
 
 /**
  * Lightweight ping from the workspace shell so presence and unread badges stay
@@ -11,7 +11,14 @@ export async function GET() {
   if (!me) return new NextResponse("Unauthorized", { status: 401 });
 
   return NextResponse.json(
-    { members: await listMembersWithPresence(), unread: await unreadCounts(me.id) },
+    { members: await listMembersWithPresence(), unread: await unreadCounts(me.id), notifications: await activityNotifications(me.id) },
     { headers: { "cache-control": "no-store" } },
   );
+}
+
+export async function POST() {
+  const me = await currentUser();
+  if (!me) return new NextResponse("Unauthorized", { status: 401 });
+  await markActivityRead(me.id);
+  return new NextResponse(null, { status: 204 });
 }

@@ -287,6 +287,7 @@ WantedBy=multi-user.target`}</Code>
               [<strong className="text-foreground">Analytics</strong>, <>Totals, tasks per column, priority split, workload per member, and a 14-day activity chart built from the history log.</>],
               [<strong className="text-foreground">My Tasks</strong>, <>Everything assigned to you, soonest due first, overdue in red.</>],
               [<strong className="text-foreground">Inbox</strong>, <>Every change to every task, newest first, with who did it.</>],
+              [<strong className="text-foreground">Notifications</strong>, <>The bell dropdown combines unread card activity and chat. Card items open Inbox; chat items open the right conversation. Mark card activity read to clear it.</>],
               [<strong className="text-foreground">Task history</strong>, <>Creation, column moves, reorders, and title/details/priority/assignee/due-date edits are all recorded. Open a task to see its timeline.</>],
               [<strong className="text-foreground">Canvas</strong>, <>Excalidraw with sheet tabs. Each sheet keeps its own drawing, saved on an 800ms debounce as you draw and flushed when you switch sheets or close the tab; switching sheets never disturbs another one. Pasted images are embedded in the sheet&rsquo;s snapshot rather than stored as attachments, so an image-heavy sheet becomes a large row.</>],
               [<strong className="text-foreground">Chat</strong>, <>A workspace channel everyone reads, plus a direct message thread per member. Unread badges, file attachments with inline image previews, and 15 minutes to edit your own message.</>],
@@ -303,7 +304,7 @@ WantedBy=multi-user.target`}</Code>
           <Table
             head={["Table", "Holds"]}
             rows={[
-              [<C>users</C>, <>Accounts: email, name, scrypt password hash, avatar colour, admin flag, last-seen stamp.</>],
+              [<C>users</C>, <>Accounts: email, name, scrypt password hash, avatar colour, admin flag, last-seen stamp, activity-notification read cursor.</>],
               [<C>sessions</C>, <>Login sessions: a random token, its owner, an expiry.</>],
               [<C>settings</C>, <>Key/value. Currently just the workspace name.</>],
               [<C>projects</C>, <>Boards.</>],

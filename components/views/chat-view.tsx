@@ -68,14 +68,15 @@ function Attachments({ files }: { files: Attachment[] }) {
   );
 }
 
-export function ChatView({ meId, initialMembers }: { meId: string; initialMembers: MemberPresence[] }) {
+export function ChatView({ meId, initialMembers, initialChannel = "all" }: { meId: string; initialMembers: MemberPresence[]; initialChannel?: string }) {
   const [members, setMembers] = useState(initialMembers);
   const [unread, setUnread] = useState<Unread[]>([]);
-  const [active, setActive] = useState<string>("all");
+  const [active, setActive] = useState(initialChannel);
 
   const countFor = (channel: string) => (channel === active ? 0 : (unread.find((u) => u.channel === channel)?.n ?? 0));
   const others = members.filter((m) => m.id !== meId);
   const activeMember = others.find((m) => m.id === active);
+
   const onlineCount = members.filter((m) => m.presence === "online").length;
 
   return (
