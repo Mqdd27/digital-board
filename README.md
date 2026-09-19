@@ -10,6 +10,19 @@ workspace chat with direct messages. Multi-user, with per-project roles.
 Runs on your own machine against your own PostgreSQL — no third-party services,
 no per-seat billing.
 
+![The board](public/screenshots/board.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="public/screenshots/canvas.png" alt="Canvas"><br><sub><b>Canvas</b> — Excalidraw sheets per project</sub></td>
+    <td width="50%"><img src="public/screenshots/analytics.png" alt="Analytics"><br><sub><b>Analytics</b> — column, priority, workload, 14-day activity</sub></td>
+  </tr>
+  <tr>
+    <td><img src="public/screenshots/chat.png" alt="Chat"><br><sub><b>Chat</b> — workspace channel and direct messages</sub></td>
+    <td><img src="public/screenshots/settings.png" alt="Settings"><br><sub><b>Settings</b> — members, presence, per-project roles</sub></td>
+  </tr>
+</table>
+
 ## Quick start
 
 ```bash
@@ -29,7 +42,10 @@ npm start
 
 Open <http://localhost:3000>. The database is empty, so you land on `/setup` — a
 one-time wizard for the workspace name, your first project, the board columns and
-the admin account. Tables create themselves on first use; there is no migration
+the admin account.
+
+![First-run setup](public/screenshots/setup.png)
+ Tables create themselves on first use; there is no migration
 command.
 
 Requires **Node 22+** and **PostgreSQL 14+** (verified on 16). For development,

@@ -105,7 +105,7 @@ export function AnalyticsView({ stats }: { stats: Stats }) {
         </section>
 
         <section className="rounded-xl border bg-card p-5">
-          <h2 className="mb-1 text-sm font-semibold">14-day activity terakhir</h2>
+          <h2 className="mb-1 text-sm font-semibold">Last 14 days</h2>
           <p className="mb-4 text-[11px] text-muted-foreground">Task changes per day.</p>
           <div className="flex h-28 items-end gap-1.5">
             {days.map((d) => (

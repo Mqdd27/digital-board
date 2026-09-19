@@ -11,6 +11,15 @@ export const metadata = {
 // ponytail: plain JSX, no MDX pipeline or content collection. One page, one
 // file. Split it when a second docs page exists, not before.
 
+/** Screenshot with a caption. Plain <img>: these are static files in /public, not layout-critical. */
+const Shot = ({ src, alt }: { src: string; alt: string }) => (
+  <figure className="my-2 overflow-hidden rounded-xl border">
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src={src} alt={alt} className="block w-full" />
+    <figcaption className="border-t bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">{alt}</figcaption>
+  </figure>
+);
+
 const TOC = [
   ["overview", "Overview"],
   ["requirements", "Requirements"],
@@ -121,6 +130,7 @@ export default function DocsPage() {
             is no multi-tenancy, no background worker, no external queue, cache or object store. What it is not: a
             hosted SaaS. Every application record, including attachment bytes, lives in Postgres.
           </p>
+          <Shot src="/screenshots/board.png" alt="The board — drag and drop between columns, with labels, priority, due dates and assignees" />
 
           <H id="requirements">Requirements</H>
           <Table
@@ -172,6 +182,7 @@ npm start`}</Code>
             Submitting creates everything, signs you in and drops you on the board. <C>/setup</C> refuses to run a
             second time once an account exists.
           </p>
+          <Shot src="/screenshots/setup.png" alt="The first-run wizard — workspace, first project, columns and the admin account" />
 
           <H id="config">Configuration</H>
           <p className="text-sm text-muted-foreground">Environment variables only. There is no config file.</p>
@@ -296,6 +307,11 @@ WantedBy=multi-user.target`}</Code>
               [<strong className="text-foreground">Projects</strong>, <>Add and delete from Settings, switch from the sidebar, and rename workspace or project names from Settings or their titles. New projects start with the default columns.</>],
             ]}
           />
+
+          <Shot src="/screenshots/canvas.png" alt="Canvas — Excalidraw sheets, one drawing per tab, saved as you draw" />
+          <Shot src="/screenshots/chat.png" alt="Chat — the workspace channel plus a direct message thread per member" />
+          <Shot src="/screenshots/analytics.png" alt="Analytics — tasks per column, priority split, workload per member and 14-day activity" />
+          <Shot src="/screenshots/settings.png" alt="Settings — workspace name, members with presence, and the per-project role matrix" />
 
           <H id="data">Data model</H>
           <p className="text-sm text-muted-foreground">
