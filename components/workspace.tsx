@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { applyFilters, initials, type Column, type Filters, type Member, type Task } from "@/lib/board";
 import { logoutAction, renameProject, renameWorkspace } from "@/lib/actions";
-import type { CanvasMeta, FeedItem, MemberPresence, Project, Unread } from "@/lib/queries";
+import type { CanvasMeta, FeedItem, MemberPresence, Project, ProjectMember, Unread } from "@/lib/queries";
 import type { User } from "@/lib/auth";
 import { Avatar } from "./avatar";
 import { LogoMark } from "./logo-mark";
@@ -48,7 +48,7 @@ const SECTIONS: { key: SectionKey; Icon: typeof Home; label: string }[] = [
 type Alert = { title: string; body: string };
 
 export function Workspace({
-  user, workspace, projects, project, columns, members, presence, feed, notifications: initialNotifications, unread: initialUnread, mine, stats, sheets, today, dark,
+  user, workspace, projects, project, columns, members, assignments, presence, feed, notifications: initialNotifications, unread: initialUnread, mine, stats, sheets, today, dark,
 }: {
   user: User;
   workspace: string;
@@ -56,6 +56,7 @@ export function Workspace({
   project: Project | null;
   columns: Column[];
   members: Member[];
+  assignments: ProjectMember[];
   feed: FeedItem[];
   notifications: FeedItem[];
   unread: Unread[];
@@ -454,7 +455,7 @@ export function Workspace({
         ) : section === "chat" ? (
           <ChatView key={chatChannel} meId={user.id} initialMembers={live} initialChannel={chatChannel} />
         ) : section === "settings" ? (
-          <MembersPanel workspace={workspace} presence={live} isAdmin={user.is_admin === 1} projects={projects} activeProjectId={project?.id ?? null} />
+          <MembersPanel workspace={workspace} memberId={user.id} presence={live} isAdmin={user.is_admin === 1} projects={projects} assignments={assignments} activeProjectId={project?.id ?? null} />
         ) : !project ? (
           <EmptyProject />
         ) : section === "canvas" ? (

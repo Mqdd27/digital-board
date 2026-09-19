@@ -32,11 +32,21 @@ const toTask = (r: TaskRow): Task => ({
 
 export type Project = { id: string; name: string };
 
-export const listProjects = () => all<Project>("SELECT id, name FROM projects ORDER BY position, created_at");
+export const listProjects = (userId: string, isAdmin: boolean) =>
+  isAdmin
+    ? all<Project>("SELECT id, name FROM projects ORDER BY position, created_at")
+    : all<Project>(
+        `SELECT p.id, p.name FROM projects p JOIN project_members pm ON pm.project_id = p.id
+         WHERE pm.user_id = ? ORDER BY p.position, p.created_at`,
+        userId,
+      );
 
 export const firstProject = () => get<Project>("SELECT id, name FROM projects ORDER BY position, created_at LIMIT 1");
 
 export const listMembers = () => all<Member>("SELECT id, name, color FROM users ORDER BY created_at");
+
+export type ProjectMember = { user_id: string; project_id: string; role: "admin" | "editor" | "viewer" };
+export const projectMembers = () => all<ProjectMember>("SELECT user_id, project_id, role FROM project_members");
 
 export async function getBoard(projectId: string): Promise<Column[]> {
   const columns = await all<{ id: string; title: string; color: string }>(

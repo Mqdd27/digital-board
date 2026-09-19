@@ -10,16 +10,21 @@ import { get, run } from "@/lib/db";
  * would only move the failure, not remove it.
  */
 
-async function guard() {
-  return (await currentUser()) !== null;
+async function guard(projectId: string, write = false) {
+  const user = await currentUser();
+  if (!user) return false;
+  if (user.is_admin === 1) return true;
+  const member = await get<{ role: string }>(
+    "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
+    projectId, user.id,
+  );
+  return !!member && (!write || member.role !== "viewer");
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await guard())) return new NextResponse("Unauthorized", { status: 401 });
-
   const { id } = await params;
-  const row = await get<{ snapshot: string | null }>("SELECT snapshot FROM canvases WHERE id = ?", id);
-  if (!row) return new NextResponse("Not found", { status: 404 });
+  const row = await get<{ snapshot: string | null; project_id: string }>("SELECT snapshot, project_id FROM canvases WHERE id = ?", id);
+  if (!row || !await guard(row.project_id)) return new NextResponse("Not found", { status: 404 });
 
   // Already JSON on disk — hand it back verbatim rather than parse-then-restringify.
   return new NextResponse(row.snapshot ?? "null", {
@@ -28,10 +33,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await guard())) return new NextResponse("Unauthorized", { status: 401 });
-
   const { id } = await params;
-  if (!(await get("SELECT 1 FROM canvases WHERE id = ?", id))) return new NextResponse("Not found", { status: 404 });
+  const canvas = await get<{ project_id: string }>("SELECT project_id FROM canvases WHERE id = ?", id);
+  if (!canvas || !await guard(canvas.project_id, true)) return new NextResponse("Not found", { status: 404 });
 
   const snapshot = await req.text();
   try {

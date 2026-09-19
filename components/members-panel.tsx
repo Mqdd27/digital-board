@@ -3,9 +3,9 @@
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderPlus, Plus, Trash2 } from "lucide-react";
-import { addProject, deleteProject, inviteMember, renameProject, renameWorkspace } from "@/lib/actions";
+import { addProject, deleteProject, inviteMember, renameProject, renameWorkspace, setProjectMember } from "@/lib/actions";
 import { initials } from "@/lib/board";
-import type { MemberPresence, Project } from "@/lib/queries";
+import type { MemberPresence, Project, ProjectMember } from "@/lib/queries";
 import { Avatar } from "./avatar";
 import { PresenceDot } from "./views/chat-view";
 import { Field, FormError, SubmitButton } from "./form-bits";
@@ -21,12 +21,14 @@ const ago = (iso: string | null) => {
 };
 
 export function MembersPanel({
-  workspace, presence, isAdmin, projects, activeProjectId,
+  workspace, memberId, presence, isAdmin, projects, assignments, activeProjectId,
 }: {
   workspace: string;
+  memberId: string;
   presence: MemberPresence[];
   isAdmin: boolean;
   projects: Project[];
+  assignments: ProjectMember[];
   activeProjectId: string | null;
 }) {
   const router = useRouter();
@@ -65,12 +67,16 @@ export function MembersPanel({
         <section>
           <h2 className="text-sm font-semibold">Workspace</h2>
           <p className="mb-3 text-xs text-muted-foreground">Click the name to rename this workspace.</p>
-          <EditableTitle
-            value={workspace}
-            onSave={(name) => renameWorkspace(name).then((res) => { router.refresh(); return res; })}
-            className="rounded-lg border bg-card px-3 py-2 text-sm font-medium"
-            inputClassName="w-full text-sm font-medium"
-          />
+          {isAdmin ? (
+            <EditableTitle
+              value={workspace}
+              onSave={(name) => renameWorkspace(name).then((res) => { router.refresh(); return res; })}
+              className="rounded-lg border bg-card px-3 py-2 text-sm font-medium"
+              inputClassName="w-full text-sm font-medium"
+            />
+          ) : (
+            <p className="rounded-lg border bg-card px-3 py-2 text-sm font-medium">{workspace}</p>
+          )}
         </section>
 
         {/* Members */}
@@ -106,6 +112,37 @@ export function MembersPanel({
           </ul>
         </section>
 
+        {isAdmin && (
+          <section>
+            <h2 className="text-sm font-semibold">Project permissions</h2>
+            <p className="mb-3 text-xs text-muted-foreground">Assign each member to a project and choose their access level.</p>
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b bg-secondary/50 text-muted-foreground">
+                  <tr><th className="px-3 py-2 font-medium">Member</th>{projects.map((project) => <th key={project.id} className="px-3 py-2 font-medium">{project.name}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {presence.map((member) => (
+                    <tr key={member.id} className="border-b last:border-0">
+                      <td className="whitespace-nowrap px-3 py-2 font-medium">{member.name}</td>
+                      {projects.map((project) => (
+                        <td key={project.id} className="px-3 py-2">
+                          <select aria-label={`${member.name} ${project.name} access`} value={assignments.find((item) => item.user_id === member.id && item.project_id === project.id)?.role ?? ""} onChange={(event) => void setProjectMember(project.id, member.id, event.target.value as "admin" | "editor" | "viewer" | "").then(() => router.refresh())} className="rounded border bg-background px-1.5 py-1 text-xs">
+                            <option value="">No access</option>
+                            <option value="viewer">View</option>
+                            <option value="editor">Edit</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         {/* Projects */}
         <section>
           <h2 className="text-sm font-semibold">Projects</h2>
@@ -119,12 +156,16 @@ export function MembersPanel({
                   className="size-2 shrink-0 rounded-full"
                   style={{ background: p.id === activeProjectId ? "var(--chart-1)" : "var(--muted-foreground)" }}
                 />
-                <EditableTitle
-                  value={p.name}
-                  onSave={(name) => renameProject(p.id, name).then((res) => { router.refresh(); return res; })}
-                  className="min-w-0 flex-1 text-sm"
-                  inputClassName="min-w-0 flex-1 text-sm"
-                />
+                {isAdmin || assignments.some((item) => item.user_id === memberId && item.project_id === p.id && item.role === "admin") ? (
+                  <EditableTitle
+                    value={p.name}
+                    onSave={(name) => renameProject(p.id, name).then((res) => { router.refresh(); return res; })}
+                    className="min-w-0 flex-1 text-sm"
+                    inputClassName="min-w-0 flex-1 text-sm"
+                  />
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+                )}
                 {isAdmin && (
                   <button
                     onClick={() => void removeProject(p)}
@@ -138,28 +179,30 @@ export function MembersPanel({
             ))}
           </ul>
 
-          <div className="flex gap-2">
-            <input
-              value={newProject}
-              onChange={(e) => setNewProject(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void createProject();
-                }
-              }}
-              placeholder="New project name"
-              className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-            />
-            <button
-              onClick={() => void createProject()}
-              disabled={busy || !newProject.trim()}
-              className="flex items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-40"
-            >
-              <FolderPlus className="size-3.5" />
-              {busy ? "Adding…" : "Add"}
-            </button>
-          </div>
+          {isAdmin && (
+            <div className="flex gap-2">
+              <input
+                value={newProject}
+                onChange={(e) => setNewProject(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void createProject();
+                  }
+                }}
+                placeholder="New project name"
+                className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+              />
+              <button
+                onClick={() => void createProject()}
+                disabled={busy || !newProject.trim()}
+                className="flex items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-40"
+              >
+                <FolderPlus className="size-3.5" />
+                {busy ? "Adding…" : "Add"}
+              </button>
+            </div>
+          )}
           {projectError && <p className="mt-2 text-xs text-[var(--chart-7)]">{projectError}</p>}
         </section>
 

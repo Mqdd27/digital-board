@@ -19,6 +19,21 @@ async function logEvent(taskId: string, actorId: string | null, text: string) {
   await run("INSERT INTO task_events (task_id, actor_id, text, at) VALUES (?,?,?,?)", taskId, actorId, text, now());
 }
 
+async function projectRole(user: Awaited<ReturnType<typeof requireUser>>, projectId: string) {
+  if (user.is_admin) return "workspace-admin";
+  return (await get<{ role: "admin" | "editor" | "viewer" }>(
+    "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
+    projectId, user.id,
+  ))?.role ?? null;
+}
+
+async function writableColumn(user: Awaited<ReturnType<typeof requireUser>>, columnId: string) {
+  const column = await get<{ project_id: string }>("SELECT project_id FROM columns WHERE id = ?", columnId);
+  if (!column) return false;
+  const role = await projectRole(user, column.project_id);
+  return role !== null && role !== "viewer";
+}
+
 // ── Setup wizard ────────────────────────────────────────────────────────────
 
 export async function runSetup(_prev: unknown, form: FormData) {
@@ -95,6 +110,7 @@ export async function createTask(_prev: unknown, form: FormData) {
   const columnId = String(form.get("columnId") ?? "");
   const title = String(form.get("title") ?? "").trim();
   if (!title) return { error: "Title is required." };
+  if (!await writableColumn(user, columnId)) return { error: "You cannot edit this project." };
   if (!await get("SELECT 1 FROM columns WHERE id = ?", columnId)) return { error: "Column not found." };
 
   const priority = (String(form.get("priority") ?? "medium") as Priority) ?? "medium";
@@ -120,7 +136,7 @@ export async function moveTask(taskId: string, toColumnId: string, toIndex: numb
   const user = await requireUser();
   const task = await get<{ column_id: string; title: string }>("SELECT column_id, title FROM tasks WHERE id = ?", taskId);
   const dest = await get<{ title: string }>("SELECT title FROM columns WHERE id = ?", toColumnId);
-  if (!task || !dest) return;
+  if (!task || !dest || !await writableColumn(user, task.column_id) || !await writableColumn(user, toColumnId)) return;
 
   const fromColumnId = task.column_id;
   const fromTitle = ((await get<{ title: string }>("SELECT title FROM columns WHERE id = ?", fromColumnId)))?.title ?? "?";
@@ -160,6 +176,8 @@ export async function updateTask(_prev: unknown, form: FormData) {
     "SELECT title, description, priority, assignee_id, due_date FROM tasks WHERE id = ?",
     id,
   );
+  const taskColumn = await get<{ column_id: string }>("SELECT column_id FROM tasks WHERE id = ?", id);
+  if (!taskColumn || !await writableColumn(user, taskColumn.column_id)) return { error: "You cannot edit this project." };
   if (!before) return { error: "Task not found." };
 
   const title = String(form.get("title") ?? "").trim();
@@ -188,14 +206,28 @@ export async function updateTask(_prev: unknown, form: FormData) {
 }
 
 export async function deleteTask(id: string) {
-  await requireUser();
+  const user = await requireUser();
+  const task = await get<{ column_id: string }>("SELECT column_id FROM tasks WHERE id = ?", id);
+  if (!task || !await writableColumn(user, task.column_id)) return;
   await run("DELETE FROM tasks WHERE id = ?", id);
   revalidatePath("/board");
 }
-
-// ── Board structure (project name + columns) ────────────────────────────────
+export async function setProjectMember(projectId: string, userId: string, role: "admin" | "editor" | "viewer" | "") {
+  const user = await requireUser();
+  if (!user.is_admin) return { error: "Only workspace admins can assign projects." };
+  if (role === "") await run("DELETE FROM project_members WHERE project_id = ? AND user_id = ?", projectId, userId);
+  else await run(
+    `INSERT INTO project_members (project_id, user_id, role) VALUES (?,?,?)
+     ON CONFLICT (project_id, user_id) DO UPDATE SET role = excluded.role`,
+    projectId, userId, role,
+  );
+  revalidatePath("/board");
+  return { ok: true };
+}
 
 export async function addProject(name: string) {
+  const user = await requireUser();
+  if (!user.is_admin) return { error: "Only workspace admins can create projects." };
   await requireUser();
   const clean = name.trim();
   if (!clean) return { error: "Project name is required." };
@@ -229,7 +261,8 @@ export async function deleteProject(id: string) {
 }
 
 export async function renameWorkspace(name: string) {
-  await requireUser();
+  const user = await requireUser();
+  if (!user.is_admin) return { error: "Only workspace admins can rename the workspace." };
   const clean = name.trim();
   if (!clean) return { error: "Workspace name is required." };
   await run("UPDATE settings SET value = ? WHERE key = 'workspace'", clean);
@@ -238,7 +271,9 @@ export async function renameWorkspace(name: string) {
 }
 
 export async function renameProject(id: string, name: string) {
-  await requireUser();
+  const user = await requireUser();
+  const role = await projectRole(user, id);
+  if (role !== "workspace-admin" && role !== "admin") return { error: "You cannot manage this project." };
   const clean = name.trim();
   if (!clean) return { error: "Project name is required." };
   await run("UPDATE projects SET name = ? WHERE id = ?", clean, id);
@@ -247,7 +282,9 @@ export async function renameProject(id: string, name: string) {
 }
 
 export async function addColumn(projectId: string, title: string, color: string) {
-  await requireUser();
+  const user = await requireUser();
+  const role = await projectRole(user, projectId);
+  if (role !== "workspace-admin" && role !== "admin") return { error: "You cannot manage this project." };
   const clean = title.trim();
   if (!clean) return { error: "Column name is required." };
   const next = (await get<{ n: number }>(
@@ -263,7 +300,10 @@ export async function addColumn(projectId: string, title: string, color: string)
 }
 
 export async function updateColumn(id: string, title: string, color: string) {
-  await requireUser();
+  const user = await requireUser();
+  const column = await get<{ project_id: string }>("SELECT project_id FROM columns WHERE id = ?", id);
+  const role = column && await projectRole(user, column.project_id);
+  if (role !== "workspace-admin" && role !== "admin") return { error: "You cannot manage this project." };
   const clean = title.trim();
   if (!clean) return { error: "Column name is required." };
   await run("UPDATE columns SET title = ?, color = ? WHERE id = ?", clean, color, id);
@@ -273,11 +313,12 @@ export async function updateColumn(id: string, title: string, color: string) {
 
 /** Deleting a column takes its tasks with it (FK cascade) — the UI confirms the count first. */
 export async function deleteColumn(id: string) {
-  await requireUser();
-  const last = (await get<{ n: number }>(
-    "SELECT COUNT(*) n FROM columns WHERE project_id = (SELECT project_id FROM columns WHERE id = ?)",
-    id,
-  ))!.n;
+  const user = await requireUser();
+  const column = await get<{ project_id: string }>("SELECT project_id FROM columns WHERE id = ?", id);
+  if (!column) return { error: "Column not found." };
+  const role = await projectRole(user, column.project_id);
+  if (role !== "workspace-admin" && role !== "admin") return { error: "You cannot manage this project." };
+  const last = (await get<{ n: number }>("SELECT COUNT(*) n FROM columns WHERE project_id = ?", column.project_id))!.n;
   if (last <= 1) return { error: "A board needs at least one column." };
   await run("DELETE FROM columns WHERE id = ?", id);
   revalidatePath("/board");
@@ -286,12 +327,13 @@ export async function deleteColumn(id: string) {
 
 /** Move a column left or right. Positions are renumbered densely afterwards. */
 export async function moveColumn(id: string, direction: -1 | 1) {
-  await requireUser();
+  const user = await requireUser();
   const col = await get<{ project_id: string; position: number }>(
     "SELECT project_id, position FROM columns WHERE id = ?",
     id,
   );
-  if (!col) return;
+  const role = col && await projectRole(user, col.project_id);
+  if (!col || (role !== "workspace-admin" && role !== "admin")) return;
   const ordered = (
     await all<{ id: string }>("SELECT id FROM columns WHERE project_id = ? ORDER BY position", col.project_id)
   ).map((r) => r.id);
@@ -314,7 +356,8 @@ export async function fetchHistory(taskId: string) {
 // ── Canvas sheets ───────────────────────────────────────────────────────────
 
 export async function createCanvas(projectId: string, name: string) {
-  await requireUser();
+  const user = await requireUser();
+  if ((await projectRole(user, projectId)) === null || (await projectRole(user, projectId)) === "viewer") return;
   const clean = name.trim() || "Untitled sheet";
   const next = (await get<{ n: number }>("SELECT COALESCE(MAX(position) + 1, 0) n FROM canvases WHERE project_id = ?", projectId))!.n;
   const id = randomUUID();
@@ -327,7 +370,9 @@ export async function createCanvas(projectId: string, name: string) {
 }
 
 export async function renameCanvas(id: string, name: string) {
-  await requireUser();
+  const user = await requireUser();
+  const canvas = await get<{ project_id: string }>("SELECT project_id FROM canvases WHERE id = ?", id);
+  if (!canvas || (await projectRole(user, canvas.project_id)) === "viewer" || (await projectRole(user, canvas.project_id)) === null) return;
   const clean = name.trim();
   if (!clean) return;
   await run("UPDATE canvases SET name = ? WHERE id = ?", clean, id);
@@ -335,7 +380,9 @@ export async function renameCanvas(id: string, name: string) {
 }
 
 export async function deleteCanvas(id: string) {
-  await requireUser();
+  const user = await requireUser();
+  const canvas = await get<{ project_id: string }>("SELECT project_id FROM canvases WHERE id = ?", id);
+  if (!canvas || (await projectRole(user, canvas.project_id)) === "viewer" || (await projectRole(user, canvas.project_id)) === null) return;
   await run("DELETE FROM canvases WHERE id = ?", id);
   revalidatePath("/board");
 }

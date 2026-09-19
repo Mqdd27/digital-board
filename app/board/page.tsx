@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { currentUser } from "@/lib/auth";
 import { get, isInstalled } from "@/lib/db";
-import { activityFeed, activityNotifications, analytics, getBoard, listCanvases, listMembers, listMembersWithPresence, listProjects, myTasks, unreadCounts } from "@/lib/queries";
+import { activityFeed, activityNotifications, analytics, getBoard, listCanvases, listMembers, listMembersWithPresence, listProjects, myTasks, projectMembers, unreadCounts } from "@/lib/queries";
 import { Workspace } from "@/components/workspace";
 
 export default async function BoardPage({ searchParams }: PageProps<"/board">) {
@@ -10,7 +10,7 @@ export default async function BoardPage({ searchParams }: PageProps<"/board">) {
   const user = await currentUser();
   if (!user) redirect("/login");
 
-  const projects = await listProjects();
+  const projects = await listProjects(user.id, user.is_admin === 1);
   const wanted = (await searchParams).project;
   const project = projects.find((p) => p.id === wanted) ?? projects[0] ?? null;
   const workspace = (await get<{ value: string }>("SELECT value FROM settings WHERE key = 'workspace'"))?.value ?? "Workspace";
@@ -23,6 +23,7 @@ export default async function BoardPage({ searchParams }: PageProps<"/board">) {
       project={project}
       columns={project ? await getBoard(project.id) : []}
       members={await listMembers()}
+      assignments={await projectMembers()}
       presence={await listMembersWithPresence()}
       feed={await activityFeed()}
       notifications={await activityNotifications(user.id)}
