@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
-import { activityNotifications, listMembersWithPresence, markActivityRead, unreadCounts } from "@/lib/queries";
+import { activityNotifications, listMembersWithPresence, markActivityItemsRead, markActivityRead, markAllMessagesRead, unreadCounts } from "@/lib/queries";
 
 /**
  * Lightweight ping from the workspace shell so presence and unread badges stay
@@ -16,9 +16,13 @@ export async function GET() {
   );
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const me = await currentUser();
   if (!me) return new NextResponse("Unauthorized", { status: 401 });
-  await markActivityRead(me.id);
+  const body = await req.json().catch(() => null);
+  const ids = Array.isArray(body?.ids) ? body.ids.filter((id: unknown): id is number => typeof id === "number" && Number.isInteger(id) && id > 0) : [];
+  if (ids.length > 0) await markActivityItemsRead(me.id, ids);
+  else await markActivityRead(me.id);
+  if (new URL(req.url).searchParams.get("all") === "true") await markAllMessagesRead(me.id);
   return new NextResponse(null, { status: 204 });
 }

@@ -92,7 +92,8 @@ export const activityNotifications = async (userId: string, limit = 5): Promise<
        JOIN tasks t ON t.id = e.task_id
        JOIN columns c ON c.id = t.column_id
        LEFT JOIN users u ON u.id = e.actor_id
-      WHERE e.id > ? AND e.actor_id IS DISTINCT FROM ?
+      WHERE e.id > ?
+        AND NOT EXISTS (SELECT 1 FROM activity_reads ar WHERE ar.user_id = ? AND ar.event_id = e.id)
       ORDER BY e.id DESC LIMIT ?`,
     read, userId, limit,
   )).map((e) => ({ ...e, atLabel: stamp(e.at), dayLabel: day(e.at) }));
@@ -101,6 +102,12 @@ export const activityNotifications = async (userId: string, limit = 5): Promise<
 export async function markActivityRead(userId: string) {
   const upTo = (await get<{ id: number }>("SELECT COALESCE(MAX(id), 0) id FROM task_events"))!.id;
   await run("UPDATE users SET last_activity_read_id = GREATEST(last_activity_read_id, ?) WHERE id = ?", upTo, userId);
+}
+
+export async function markActivityItemsRead(userId: string, eventIds: number[]) {
+  for (const eventId of eventIds) {
+    await run("INSERT INTO activity_reads (user_id, event_id) VALUES (?,?) ON CONFLICT DO NOTHING", userId, eventId);
+  }
 }
 
 export const myTasks = async (userId: string) =>
@@ -265,4 +272,21 @@ export async function markRead(meId: string, withUser: string | null) {
      ON CONFLICT (user_id, channel) DO UPDATE SET last_read_id = GREATEST(message_reads.last_read_id, excluded.last_read_id)`,
     meId, channelKey(withUser), upTo,
   );
+}
+
+export async function markAllMessagesRead(meId: string) {
+  const rows = await all<{ channel: string; id: number }>(
+    `SELECT 'all' channel, COALESCE(MAX(id), 0) id FROM messages WHERE recipient_id IS NULL
+     UNION ALL
+     SELECT author_id channel, MAX(id) id FROM messages WHERE recipient_id = ? GROUP BY author_id`,
+    meId,
+  );
+  for (const row of rows) {
+    if (row.id === 0) continue;
+    await run(
+      `INSERT INTO message_reads (user_id, channel, last_read_id) VALUES (?,?,?)
+       ON CONFLICT (user_id, channel) DO UPDATE SET last_read_id = GREATEST(message_reads.last_read_id, excluded.last_read_id)`,
+      meId, row.channel, row.id,
+    );
+  }
 }

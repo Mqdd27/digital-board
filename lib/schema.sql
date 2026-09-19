@@ -106,6 +106,12 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 CREATE INDEX IF NOT EXISTS attachments_message ON attachments(message_id);
 
+CREATE TABLE IF NOT EXISTS activity_reads (
+  user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_id INTEGER NOT NULL REFERENCES task_events(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, event_id)
+);
+
 -- Columns added after the first release. Append only.
 ALTER TABLE users    ADD COLUMN IF NOT EXISTS last_seen_at TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at    TEXT;

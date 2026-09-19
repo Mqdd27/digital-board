@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  BarChart3, Bell, Calendar, CheckSquare, Filter, Home, Inbox,
+  BarChart3, Bell, Calendar, Check, CheckSquare, Filter, Home, Inbox,
   LayoutGrid, List, LogOut, MessageSquare, PenLine, Plus, Search, Settings, X,
 } from "lucide-react";
 import { applyFilters, initials, type Column, type Filters, type Member, type Task } from "@/lib/board";
@@ -144,9 +144,20 @@ export function Workspace({
   const online = live.filter((m) => m.presence === "online").length;
   const unreadTotal = section === "chat" ? 0 : unread.reduce((n, u) => n + u.n, 0);
 
-  function markNotificationsRead() {
+  function markCardNotificationsRead() {
     setNotifications([]);
     void fetch("/api/presence", { method: "POST" });
+  }
+
+  function markAllNotificationsRead() {
+    setNotifications([]);
+    setUnread([]);
+    void fetch("/api/presence?all=true", { method: "POST" });
+  }
+
+  function markNotificationItemsRead(ids: number[]) {
+    setNotifications((items) => items.filter((item) => !ids.includes(item.id)));
+    void fetch("/api/presence", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids }) });
   }
 
   async function enableAlerts() {
@@ -215,9 +226,9 @@ export function Workspace({
                   </span>
                 ) : null
               )}
-              {!collapsed && key === "inbox" && feed.length > 0 && (
+              {!collapsed && key === "inbox" && notifications.length > 0 && (
                 <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
-                  {feed.length}
+                  {notifications.length}
                 </span>
               )}
               {!collapsed && key === "mine" && mine.length > 0 && (
@@ -349,7 +360,7 @@ export function Workspace({
                   unread={unread}
                   members={live}
                   onOpenInbox={() => {
-                    markNotificationsRead();
+                    markCardNotificationsRead();
                     setShowNotifications(false);
                     setSection("inbox");
                   }}
@@ -359,7 +370,7 @@ export function Workspace({
                     setShowNotifications(false);
                     setSection("chat");
                   }}
-                  onMarkRead={markNotificationsRead}
+                  onMarkRead={markAllNotificationsRead}
                   onOpenInboxPage={() => {
                     setShowNotifications(false);
                     setSection("inbox");
@@ -449,7 +460,7 @@ export function Workspace({
         ) : section === "canvas" ? (
           <CanvasView projectId={project.id} sheets={sheets} dark={dark} onChanged={() => router.refresh()} />
         ) : section === "inbox" ? (
-          <FeedView feed={feed} />
+          <FeedView feed={notifications} onMarkRead={markNotificationItemsRead} onMarkAll={markCardNotificationsRead} />
         ) : section === "mine" ? (
           <MyTasksView tasks={mine} onOpen={(id) => setEditing(columns.flatMap((c) => c.tasks).find((t) => t.id === id) ?? null)} />
         ) : view === 0 ? (
@@ -491,34 +502,41 @@ function EmptyProject() {
   );
 }
 
-function FeedView({ feed }: { feed: FeedItem[] }) {
+function FeedView({ feed, onMarkRead, onMarkAll }: { feed: FeedItem[]; onMarkRead: (ids: number[]) => void; onMarkAll: () => void }) {
+  const [selected, setSelected] = useState(new Set<number>());
   if (feed.length === 0) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-10 text-center text-sm text-muted-foreground">
-        No activity yet.
-      </div>
-    );
+    return <div className="flex flex-1 items-center justify-center p-10 text-center text-sm text-muted-foreground">No unread notifications.</div>;
+  }
+  function readSelected() {
+    onMarkRead([...selected]);
+    setSelected(new Set());
   }
   return (
     <main className="flex-1 overflow-y-auto">
-      <ul className="mx-auto max-w-2xl divide-y px-5 py-6">
+      <div className="mx-auto flex max-w-2xl items-center gap-2 px-5 pt-6">
+        <button onClick={readSelected} disabled={selected.size === 0} className="rounded border px-2 py-1 text-xs disabled:opacity-40">Mark selected read</button>
+        <button onClick={onMarkAll} className="rounded border px-2 py-1 text-xs">Mark all read</button>
+      </div>
+      <ul className="mx-auto max-w-2xl divide-y px-5 py-3">
         {feed.map((e) => (
-          <li key={e.id} className="flex items-start gap-3 py-3">
+          <li key={e.id} onContextMenu={(event) => { event.preventDefault(); onMarkRead([e.id]); }} className="flex items-start gap-3 py-3">
+            <button type="button" aria-label={`Select ${e.taskTitle}`} aria-pressed={selected.has(e.id)} onClick={() => setSelected((ids) => {
+              const next = new Set(ids);
+              if (next.has(e.id)) next.delete(e.id);
+              else next.add(e.id);
+              return next;
+            })} className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors ${
+              selected.has(e.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-transparent hover:bg-secondary"
+            }`}>
+              <Check className="size-3" strokeWidth={3} />
+            </button>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium leading-snug">{e.taskTitle}</p>
-              <p className="text-xs text-muted-foreground">
-                {e.text}
-                {e.actor ? ` · ${e.actor}` : ""}
-              </p>
+              <p className="text-xs text-muted-foreground">{e.text}{e.actor ? ` · ${e.actor}` : ""}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <span className="flex items-center gap-1.5 rounded-full border bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
-                <span className="size-1.5 rounded-full" style={{ background: e.columnColor }} />
-                {e.columnTitle}
-              </span>
-              <span className="w-28 text-right text-[11px] text-muted-foreground">
-                {e.atLabel}
-              </span>
+              <span className="flex items-center gap-1.5 rounded-full border bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground"><span className="size-1.5 rounded-full" style={{ background: e.columnColor }} />{e.columnTitle}</span>
+              <span className="w-28 text-right text-[11px] text-muted-foreground">{e.atLabel}</span>
             </div>
           </li>
         ))}
@@ -569,7 +587,7 @@ function NotificationMenu({
         )}
       </div>
       <div className="flex border-t p-1">
-        {cards.length > 0 && <button onClick={onMarkRead} className="rounded px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary">Mark cards read</button>}
+        <button onClick={onMarkRead} disabled={cards.length === 0 && unread.length === 0} className="rounded px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary disabled:opacity-40">Mark all read</button>
         <button onClick={onEnableAlerts} className="rounded px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary">Enable alerts</button>
         <button onClick={onOpenInboxPage} className="ml-auto rounded px-2 py-1.5 text-xs font-medium hover:bg-secondary">Open inbox</button>
       </div>
