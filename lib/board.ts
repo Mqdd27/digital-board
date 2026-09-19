@@ -8,6 +8,7 @@ export type Task = {
   id: string;
   columnId: string;
   title: string;
+  description: string | null;
   label: string | null;
   priority: Priority;
   assignee: Member | null;

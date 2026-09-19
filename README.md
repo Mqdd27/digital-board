@@ -38,7 +38,7 @@ Requires **Node 22+** and **PostgreSQL 14+** (verified on 16). For development,
 
 | Area | |
 |---|---|
-| **Board** | Drag and drop with reordering inside a column and positional drops between columns. Mouse, touch and keyboard. Columns are add / rename / recolour / reorder / delete. |
+| **Board** | Drag and drop with reordering inside a column and positional drops between columns. Mouse, touch and keyboard. Task details are editable and previewed up to three lines on cards. Columns are add / rename / recolour / reorder / delete. |
 | **List, Calendar, Analytics** | The same tasks as a table, on a month grid by due date, and as charts — column distribution, priority split, workload per member, 14-day activity. |
 | **History** | Every move, reorder and field change is logged with its actor. Per task, and board-wide in the Inbox. |
 | **Canvas** | Excalidraw with sheet tabs. Each sheet keeps its own drawing. |
@@ -50,7 +50,6 @@ Requires **Node 22+** and **PostgreSQL 14+** (verified on 16). For development,
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | — | **Required.** Postgres connection string. |
-| `UPLOAD_DIR` | `./uploads` | Where chat attachments are written. |
 | `DATABASE_POOL_MAX` | `10` | Maximum pooled Postgres connections. |
 | `PORT` | `3000` | Listen port. |
 | `TZ` | system | Timezone for rendered timestamps — they are formatted server-side. |
@@ -76,11 +75,10 @@ columns added later sit at the bottom of that file as
 lives in [`lib/queries.ts`](lib/queries.ts) and every write in
 [`lib/actions.ts`](lib/actions.ts).
 
-Back up both halves — the database and the files:
+Back up the database:
 
 ```bash
 pg_dump --no-owner --format=custom "$DATABASE_URL" > board.dump
-tar czf uploads.tar.gz -C "$(dirname "$UPLOAD_DIR")" uploads
 ```
 
 ## Upgrading
@@ -93,6 +91,12 @@ pm2 restart digital-board --update-env    # or restart however you run it
 ```
 
 New columns apply themselves on the next query. Back up first anyway.
+
+For pre-database attachments, migrate once before deleting the old uploads directory:
+
+```bash
+DATABASE_URL=... node scripts/files-to-postgres.mjs /path/to/uploads
+```
 
 ## Development
 
@@ -116,9 +120,7 @@ transaction and rolls back.
 ## Known limits
 
 No self-service password reset. Chat polls every 3 seconds rather than using a
-socket, and has no deletion, reactions or threads. Attachment files are not
-garbage-collected. Running more than one instance requires shared storage for
-`UPLOAD_DIR`.
+socket, and has no deletion, reactions or threads.
 
 Full list in the [docs](/docs).
 

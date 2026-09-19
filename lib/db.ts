@@ -10,8 +10,6 @@ const { Pool, types } = pg;
 // `count > 0` into a string comparison. Every count here fits in a JS number.
 types.setTypeParser(20, Number);
 
-/** Uploaded files. Not in the database — see docs for moving this to a volume. */
-export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? join(process.cwd(), "uploads");
 
 declare global {
   var __boardPool: pg.Pool | undefined;
@@ -19,8 +17,10 @@ declare global {
 }
 
 function pool() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("DATABASE_URL is required. Set it in .env or .env.local to an existing PostgreSQL database.");
   return (globalThis.__boardPool ??= new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString,
     max: Number(process.env.DATABASE_POOL_MAX ?? 10),
   }));
 }

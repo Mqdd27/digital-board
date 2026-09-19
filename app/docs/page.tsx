@@ -119,8 +119,7 @@ export default function DocsPage() {
           <p className="text-sm text-muted-foreground">
             It is built for a team small enough to share one server: a homelab, a VPS, a machine in the office. There
             is no multi-tenancy, no background worker, no external queue, cache or object store. What it is not: a
-            hosted SaaS. Running more than one instance is possible now that Postgres holds the data, but every
-            instance has to share <C>UPLOAD_DIR</C>, because chat attachments are files on disk.
+            hosted SaaS. Every application record, including attachment bytes, lives in Postgres.
           </p>
 
           <H id="requirements">Requirements</H>
@@ -130,7 +129,7 @@ export default function DocsPage() {
               [<>Node.js</>, <>22 or newer</>, <>The self-checks use <C>--experimental-strip-types</C>, which needs 22+.</>],
               [<>npm</>, <>10 or newer</>, <>Ships with Node 22.</>],
               [<>PostgreSQL</>, <>14 or newer</>, <>Verified against 16. An empty database and a role that can create tables in it is all the app needs.</>],
-              [<>Disk</>, <>~500 MB</>, <>Mostly <C>node_modules</C>. The database and uploads grow with use.</>],
+              [<>Disk</>, <>~500 MB</>, <>Mostly <C>node_modules</C>. The database grows with use.</>],
             ]}
           />
 
@@ -180,7 +179,6 @@ npm start`}</Code>
             head={["Variable", "Default", "Purpose"]}
             rows={[
               [<C>DATABASE_URL</C>, <>—</>, <><strong className="text-foreground">Required.</strong> Postgres connection string, e.g. <C>postgres://board:pw@localhost:5432/board</C>.</>],
-              [<C>UPLOAD_DIR</C>, <C>./uploads</C>, <>Where chat attachments are written. Point this at a persistent volume in Docker.</>],
               [<C>DATABASE_POOL_MAX</C>, <>10</>, <>Maximum Postgres connections held by the pool.</>],
               [<C>PORT</C>, <>3000</>, <>Port the server listens on.</>],
               [<C>TZ</C>, <>system</>, <>Timezone used to render timestamps. They are formatted on the server, so this decides what every user sees.</>],
@@ -205,14 +203,13 @@ npm start`}</Code>
     script: "npm",
     args: "start",
     cwd: "/srv/digital-board",
-    instances: 1,          // safe to raise — see the note below about UPLOAD_DIR
+    instances: 1,
     autorestart: true,
     max_memory_restart: "512M",
     env: {
       NODE_ENV: "production",
       PORT: 3000,
       DATABASE_URL: "postgres://board:pw@localhost:5432/board",
-      UPLOAD_DIR: "/var/lib/digital-board/uploads",
       TZ: "Asia/Jakarta",
     },
   }],
@@ -224,11 +221,9 @@ pm2 start ecosystem.config.js
 pm2 save          # remember the process list
 pm2 startup       # print the command that re-runs pm2 at boot, then run it`}</Code>
           <p className="rounded-lg border border-[var(--chart-7)] bg-[rgba(239,68,68,0.06)] p-4 text-sm">
-            <strong className="text-foreground">Raising <C>instances</C> is allowed now, with one condition.</strong>{" "}
-            Postgres handles concurrent writers, so cluster mode does not risk the database. What is shared state is <C>UPLOAD_DIR</C>: every instance must see the same
-            directory, or an attachment uploaded by one worker 404s from another. On a single host that is automatic.
-            Across hosts you need shared storage. Also raise <C>DATABASE_POOL_MAX</C> with care — each instance opens
-            its own pool, so total connections is instances × pool size.
+            <strong className="text-foreground">Raising <C>instances</C> is allowed.</strong> Postgres holds all
+            application state. Raise <C>DATABASE_POOL_MAX</C> with care — each instance opens its own pool, so total
+            connections is instances × pool size.
           </p>
           <p className="text-sm text-muted-foreground">Day-to-day:</p>
           <Code>{`pm2 logs digital-board        # tail logs
@@ -256,7 +251,6 @@ WorkingDirectory=/srv/digital-board
 Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=DATABASE_URL=postgres://board:pw@localhost:5432/board
-Environment=UPLOAD_DIR=/var/lib/digital-board/uploads
 Environment=TZ=Asia/Jakarta
 ExecStart=/usr/bin/npm start
 Restart=always
@@ -280,21 +274,20 @@ WantedBy=multi-user.target`}</Code>
   }
 }`}</Code>
           <p className="text-sm text-muted-foreground">
-            A load balancer in front of several instances works, as long as they all share <C>UPLOAD_DIR</C> and point
-            at the same Postgres.
+            A load balancer in front of several instances works, as long as every instance points at the same Postgres.
           </p>
 
           <H id="features">Features</H>
           <Table
             head={["Area", "What it does"]}
             rows={[
-              [<strong className="text-foreground">Board</strong>, <>Drag and drop with reordering inside a column and positional drops between columns. Works with a mouse, with touch (long-press to pick a card up, so a normal swipe still scrolls), and with the keyboard. Columns are add/rename/recolour/reorder/delete; deleting one takes its tasks and asks first.</>],
+              [<strong className="text-foreground">Board</strong>, <>Drag and drop with reordering inside a column and positional drops between columns. Works with a mouse, with touch (long-press to pick a card up, so a normal swipe still scrolls), and with the keyboard. Task details are editable and previewed up to three lines on cards. Columns are add/rename/recolour/reorder/delete; deleting one takes its tasks and asks first.</>],
               [<strong className="text-foreground">List</strong>, <>Every task as a table — status, label, priority, due date, assignee. Click a row to edit.</>],
               [<strong className="text-foreground">Calendar</strong>, <>Month grid, Monday-first. Dated tasks sit on their due date with a priority-coloured edge. Undated tasks are counted in the header.</>],
               [<strong className="text-foreground">Analytics</strong>, <>Totals, tasks per column, priority split, workload per member, and a 14-day activity chart built from the history log.</>],
               [<strong className="text-foreground">My Tasks</strong>, <>Everything assigned to you, soonest due first, overdue in red.</>],
               [<strong className="text-foreground">Inbox</strong>, <>Every change to every task, newest first, with who did it.</>],
-              [<strong className="text-foreground">Task history</strong>, <>Creation, column moves, reorders, and title/priority/assignee/due-date edits are all recorded. Open a task to see its timeline.</>],
+              [<strong className="text-foreground">Task history</strong>, <>Creation, column moves, reorders, and title/details/priority/assignee/due-date edits are all recorded. Open a task to see its timeline.</>],
               [<strong className="text-foreground">Canvas</strong>, <>Excalidraw with sheet tabs. Each sheet keeps its own drawing, saved on an 800ms debounce as you draw and flushed when you switch sheets or close the tab; switching sheets never disturbs another one. Pasted images are embedded in the sheet&rsquo;s snapshot rather than stored as attachments, so an image-heavy sheet becomes a large row.</>],
               [<strong className="text-foreground">Chat</strong>, <>A workspace channel everyone reads, plus a direct message thread per member. Unread badges, file attachments with inline image previews, and 15 minutes to edit your own message.</>],
               [<strong className="text-foreground">Presence</strong>, <>Online / away / offline per member, derived from activity rather than stored.</>],
@@ -315,12 +308,12 @@ WantedBy=multi-user.target`}</Code>
               [<C>settings</C>, <>Key/value. Currently just the workspace name.</>],
               [<C>projects</C>, <>Boards.</>],
               [<C>columns</C>, <>Board columns, ordered by a dense <C>position</C>.</>],
-              [<C>tasks</C>, <>Cards: title, label, priority, assignee, due date, position within a column.</>],
+              [<C>tasks</C>, <>Cards: title, details, label, priority, assignee, due date, position within a column.</>],
               [<C>task_events</C>, <>The history log — one row per change, with the actor.</>],
               [<C>canvases</C>, <>Canvas sheets and their Excalidraw scenes.</>],
               [<C>messages</C>, <>Chat. A <C>NULL</C> recipient is the workspace channel; a user id is a direct message.</>],
               [<C>message_reads</C>, <>One read cursor per person per conversation, which is what drives unread badges.</>],
-              [<C>attachments</C>, <>Metadata for uploaded files. The bytes live on disk in <C>UPLOAD_DIR</C>, not in the database.</>],
+              [<C>attachments</C>, <>Uploaded-file metadata and bytes.</>],
             ]}
           />
 
@@ -372,19 +365,14 @@ WantedBy=multi-user.target`}</Code>
           </p>
 
           <H id="backup">Backup and restore</H>
-          <p className="text-sm text-muted-foreground">
-Two things to back up: the database and the uploads directory.
-          </p>
-          <Code>{`# database (safe while running)
-pg_dump --no-owner --format=custom "$DATABASE_URL" > /backups/board-$(date +%F).dump
-
-# attachments are files, not rows
-tar czf /backups/uploads-$(date +%F).tar.gz -C /var/lib/digital-board uploads`}</Code>
+          <p className="text-sm text-muted-foreground">Back up the database.</p>
+          <Code>{`# safe while running
+pg_dump --no-owner --format=custom "$DATABASE_URL" > /backups/board-$(date +%F).dump`}</Code>
           <p className="text-sm text-muted-foreground">
             To restore: stop the server, then{" "}
-            <C>pg_restore --clean --if-exists --no-owner -d &quot;$DATABASE_URL&quot; board-YYYY-MM-DD.dump</C>, untar
-            the uploads back into <C>UPLOAD_DIR</C>, and start again. Restore both from the same day — an attachment row
-            without its file is a dead download.
+            <C>pg_restore --clean --if-exists --no-owner -d &quot;$DATABASE_URL&quot; board-YYYY-MM-DD.dump</C> and
+            start again. For legacy file attachments, run <C>node scripts/files-to-postgres.mjs /path/to/uploads</C>
+            before deleting that directory.
           </p>
 
           <H id="upgrade">Upgrading</H>
@@ -419,10 +407,8 @@ pm2 restart digital-board        # or: systemctl restart digital-board`}</Code>
 
           <H id="limits">Known limits</H>
           <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
-            <li>Attachments are local files, so more than one instance needs shared storage for <C>UPLOAD_DIR</C>.</li>
             <li>No self-service password reset. An admin creates a replacement account.</li>
             <li>Chat has no deletion, reactions, threads or typing indicators, and polling means near-real-time, not instant.</li>
-            <li>Attachment files are not garbage-collected — deleting a message drops its row but leaves the blob on disk.</li>
             <li>Columns move one step at a time from the editor; there is no drag-to-reorder for columns themselves.</li>
                         <li>Every route renders dynamically, because the root layout reads the theme cookie.</li>
           </ul>
@@ -438,7 +424,7 @@ node --experimental-strip-types lib/chat.check.ts    # chat poll merge
 DATABASE_URL=... node lib/postgres.check.mjs         # every app query, against your Postgres
 
 # wipe everything and start from the wizard again
-psql "$DATABASE_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' && rm -rf uploads`}</Code>
+psql "$DATABASE_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'`}</Code>
           <p className="text-sm text-muted-foreground">
             The checks are plain <C>node:assert</C> scripts. They cover the logic that fails quietly — index arithmetic
             when a card moves, the deduplication that stops a doubled chat poll producing duplicate React keys, and the

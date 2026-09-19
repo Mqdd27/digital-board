@@ -46,6 +46,16 @@ export function TaskDialog({ task, columns, members, defaultColumnId, onClose }:
         <form action={action} className="flex flex-col gap-4 overflow-y-auto p-5">
           {editing && <input type="hidden" name="id" value={task.id} />}
           <Field label="Title" name="title" required defaultValue={task?.title ?? ""} autoFocus />
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium">Details</span>
+            <textarea
+              name="description"
+              defaultValue={task?.description ?? ""}
+              rows={4}
+              placeholder="Add task details"
+              className="resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-ring"
+            />
+          </label>
 
           {!editing && (
             <Select label="Column" name="columnId" defaultValue={defaultColumnId ?? columns[0]?.id}>

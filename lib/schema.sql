@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   id          TEXT PRIMARY KEY,
   column_id   TEXT NOT NULL REFERENCES columns(id) ON DELETE CASCADE,
   title       TEXT NOT NULL,
+  description TEXT,
   label       TEXT,
   priority    TEXT NOT NULL DEFAULT 'medium',
   assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -100,6 +101,7 @@ CREATE TABLE IF NOT EXISTS attachments (
   name       TEXT NOT NULL,
   mime       TEXT NOT NULL,
   size       INTEGER NOT NULL,
+  data       BYTEA NOT NULL,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS attachments_message ON attachments(message_id);
@@ -107,3 +109,5 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments(message_id);
 -- Columns added after the first release. Append only.
 ALTER TABLE users    ADD COLUMN IF NOT EXISTS last_seen_at TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at    TEXT;
+ALTER TABLE tasks    ADD COLUMN IF NOT EXISTS description  TEXT;
+ALTER TABLE attachments ADD COLUMN IF NOT EXISTS data BYTEA;

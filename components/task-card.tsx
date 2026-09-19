@@ -16,6 +16,11 @@ export function TaskCard({ task, onOpen, overlay = false }: { task: Task; onOpen
       }`}
     >
       <p className="mb-2.5 text-sm font-medium leading-snug">{task.title}</p>
+      {task.description && (
+        <p className="mb-2.5 overflow-hidden whitespace-pre-line text-xs leading-relaxed text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
+          {task.description}
+        </p>
+      )}
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         {task.label && (
           <span className="rounded border bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">

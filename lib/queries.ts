@@ -7,6 +7,7 @@ type TaskRow = {
   id: string;
   column_id: string;
   title: string;
+  description: string | null;
   label: string | null;
   priority: Priority;
   due_date: string | null;
@@ -19,6 +20,7 @@ const toTask = (r: TaskRow): Task => ({
   id: r.id,
   columnId: r.column_id,
   title: r.title,
+  description: r.description,
   label: r.label,
   priority: r.priority,
   dueDate: r.due_date,
@@ -42,7 +44,7 @@ export async function getBoard(projectId: string): Promise<Column[]> {
     projectId,
   );
   const rows = await all<TaskRow>(
-    `SELECT t.id, t.column_id, t.title, t.label, t.priority, t.due_date,
+    `SELECT t.id, t.column_id, t.title, t.description, t.label, t.priority, t.due_date,
             u.id AS assignee_id, u.name AS assignee_name, u.color AS assignee_color
        FROM tasks t
        JOIN columns c ON c.id = t.column_id
@@ -78,9 +80,8 @@ export const activityFeed = async (limit = 100): Promise<FeedItem[]> =>
 
 export const myTasks = async (userId: string) =>
   (await all<TaskRow & { column_title: string; column_color: string; project_name: string }>(
-    `SELECT t.id, t.column_id, t.title, t.label, t.priority, t.due_date,
-            u.id AS assignee_id, u.name AS assignee_name, u.color AS assignee_color,
-            c.title AS column_title, c.color AS column_color, p.name AS project_name
+    `SELECT t.id, t.column_id, t.title, t.description, t.label, t.priority, t.due_date,
+            u.id AS assignee_id, u.name AS assignee_name, u.color AS assignee_color
        FROM tasks t
        JOIN columns c ON c.id = t.column_id
        JOIN projects p ON p.id = c.project_id

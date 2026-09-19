@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { applyFilters, columnOf, initials, placeTask, reorder, type Column } from "./board.ts";
 
 const mk = (id: string, title: string, n: number): Column["tasks"][number] => ({
-  id, columnId: title, title: `task ${n}`, label: n % 2 ? "Design" : "QA",
+  id, columnId: title, title: `task ${n}`, description: n % 2 ? "Detail" : null, label: n % 2 ? "Design" : "QA",
   priority: n % 2 ? "high" : "low", assignee: n === 1 ? { id: "u1", name: "Ada L", color: "#000" } : null, dueDate: null,
 });
 

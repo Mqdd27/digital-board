@@ -98,6 +98,7 @@ export async function createTask(_prev: unknown, form: FormData) {
   if (!await get("SELECT 1 FROM columns WHERE id = ?", columnId)) return { error: "Column not found." };
 
   const priority = (String(form.get("priority") ?? "medium") as Priority) ?? "medium";
+  const description = String(form.get("description") ?? "").trim() || null;
   const label = String(form.get("label") ?? "").trim() || null;
   const dueDate = String(form.get("dueDate") ?? "").trim() || null;
   const assignee = String(form.get("assigneeId") ?? "").trim() || null;
@@ -105,9 +106,9 @@ export async function createTask(_prev: unknown, form: FormData) {
   const next = ((await get<{ n: number }>("SELECT COALESCE(MAX(position) + 1, 0) n FROM tasks WHERE column_id = ?", columnId)))!.n;
   const id = randomUUID();
   await run(
-    `INSERT INTO tasks (id, column_id, title, label, priority, assignee_id, due_date, position, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-    id, columnId, title, label, priority, assignee, dueDate, next, now(),
+    `INSERT INTO tasks (id, column_id, title, description, label, priority, assignee_id, due_date, position, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    id, columnId, title, description, label, priority, assignee, dueDate, next, now(),
   );
   await logEvent(id, user.id, "Task created");
   revalidatePath("/board");
@@ -155,8 +156,8 @@ export async function moveTask(taskId: string, toColumnId: string, toIndex: numb
 export async function updateTask(_prev: unknown, form: FormData) {
   const user = await requireUser();
   const id = String(form.get("id") ?? "");
-  const before = await get<{ title: string; priority: string; assignee_id: string | null; due_date: string | null }>(
-    "SELECT title, priority, assignee_id, due_date FROM tasks WHERE id = ?",
+  const before = await get<{ title: string; description: string | null; priority: string; assignee_id: string | null; due_date: string | null }>(
+    "SELECT title, description, priority, assignee_id, due_date FROM tasks WHERE id = ?",
     id,
   );
   if (!before) return { error: "Task not found." };
@@ -164,16 +165,17 @@ export async function updateTask(_prev: unknown, form: FormData) {
   const title = String(form.get("title") ?? "").trim();
   if (!title) return { error: "Title is required." };
   const priority = String(form.get("priority") ?? before.priority);
+  const description = String(form.get("description") ?? "").trim() || null;
   const label = String(form.get("label") ?? "").trim() || null;
   const dueDate = String(form.get("dueDate") ?? "").trim() || null;
   const assignee = String(form.get("assigneeId") ?? "").trim() || null;
 
   await run(
-    "UPDATE tasks SET title = ?, label = ?, priority = ?, assignee_id = ?, due_date = ? WHERE id = ?",
-    title, label, priority, assignee, dueDate, id,
+    "UPDATE tasks SET title = ?, description = ?, label = ?, priority = ?, assignee_id = ?, due_date = ? WHERE id = ?",
+    title, description, label, priority, assignee, dueDate, id,
   );
-
   if (before.title !== title) await logEvent(id, user.id, `Title changed to "${title}"`);
+  if (before.description !== description) await logEvent(id, user.id, "Details updated");
   if (before.priority !== priority) await logEvent(id, user.id, `Priority changed to ${priority}`);
   if (before.assignee_id !== assignee) {
     const who = assignee ? ((await get<{ name: string }>("SELECT name FROM users WHERE id = ?", assignee)))?.name : null;

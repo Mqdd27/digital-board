@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
-import { get, run, UPLOAD_DIR } from "@/lib/db";
+import { get, run, transaction } from "@/lib/db";
 import { conversation, listMembersWithPresence, markRead, unreadCounts } from "@/lib/queries";
 
 /**
@@ -65,31 +63,29 @@ export async function POST(req: Request) {
   if (files.length > MAX_FILES) return new NextResponse(`At most ${MAX_FILES} files`, { status: 413 });
   if (files.some((f) => f.size > MAX_FILE)) return new NextResponse("File larger than 10 MB", { status: 413 });
 
-  // Write the blobs first: a file on disk with no row is harmless litter,
-  // a row pointing at a missing file is a broken download.
   const saved = await Promise.all(
-    files.map(async (f) => {
-      const id = randomUUID();
-      mkdirSync(UPLOAD_DIR, { recursive: true });
-      writeFileSync(join(UPLOAD_DIR, id), Buffer.from(await f.arrayBuffer()));
-      return { id, name: f.name || "file", mime: f.type || "application/octet-stream", size: f.size };
-    }),
+    files.map(async (f) => ({
+      id: randomUUID(),
+      name: f.name || "file",
+      mime: f.type || "application/octet-stream",
+      size: f.size,
+      data: Buffer.from(await f.arrayBuffer()),
+    })),
   );
 
   const now = new Date().toISOString();
-  // Postgres has no lastInsertRowid — RETURNING is the portable way back.
-  const inserted = await get<{ id: number }>(
-    "INSERT INTO messages (author_id, recipient_id, body, created_at) VALUES (?,?,?,?) RETURNING id",
-    me.id, to && to !== "all" ? to : null, text, now,
-  );
-  const messageId = inserted!.id;
-
-  for (const f of saved) {
-    await run(
-      "INSERT INTO attachments (id, message_id, name, mime, size, created_at) VALUES (?,?,?,?,?,?)",
-      f.id, messageId, f.name, f.mime, f.size, now,
+  await transaction(async () => {
+    const inserted = await get<{ id: number }>(
+      "INSERT INTO messages (author_id, recipient_id, body, created_at) VALUES (?,?,?,?) RETURNING id",
+      me.id, to && to !== "all" ? to : null, text, now,
     );
-  }
+    for (const f of saved) {
+      await run(
+        "INSERT INTO attachments (id, message_id, name, mime, size, data, created_at) VALUES (?,?,?,?,?,?,?)",
+        f.id, inserted!.id, f.name, f.mime, f.size, f.data, now,
+      );
+    }
+  });
 
   return new NextResponse(null, { status: 204 });
 }
