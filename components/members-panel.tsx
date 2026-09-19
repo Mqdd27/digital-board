@@ -3,12 +3,13 @@
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderPlus, Plus, Trash2 } from "lucide-react";
-import { addProject, deleteProject, inviteMember } from "@/lib/actions";
+import { addProject, deleteProject, inviteMember, renameProject, renameWorkspace } from "@/lib/actions";
 import { initials } from "@/lib/board";
 import type { MemberPresence, Project } from "@/lib/queries";
 import { Avatar } from "./avatar";
 import { PresenceDot } from "./views/chat-view";
 import { Field, FormError, SubmitButton } from "./form-bits";
+import { EditableTitle } from "./editable-title";
 
 const ago = (iso: string | null) => {
   if (!iso) return "never signed in";
@@ -20,8 +21,9 @@ const ago = (iso: string | null) => {
 };
 
 export function MembersPanel({
-  presence, isAdmin, projects, activeProjectId,
+  workspace, presence, isAdmin, projects, activeProjectId,
 }: {
+  workspace: string;
   presence: MemberPresence[];
   isAdmin: boolean;
   projects: Project[];
@@ -60,6 +62,17 @@ export function MembersPanel({
   return (
     <main className="flex-1 overflow-y-auto">
       <div className="mx-auto flex max-w-lg flex-col gap-8 px-5 py-6">
+        <section>
+          <h2 className="text-sm font-semibold">Workspace</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Click the name to rename this workspace.</p>
+          <EditableTitle
+            value={workspace}
+            onSave={(name) => renameWorkspace(name).then((res) => { router.refresh(); return res; })}
+            className="rounded-lg border bg-card px-3 py-2 text-sm font-medium"
+            inputClassName="w-full text-sm font-medium"
+          />
+        </section>
+
         {/* Members */}
         <section>
           <h2 className="text-sm font-semibold">Members</h2>
@@ -106,7 +119,12 @@ export function MembersPanel({
                   className="size-2 shrink-0 rounded-full"
                   style={{ background: p.id === activeProjectId ? "var(--chart-1)" : "var(--muted-foreground)" }}
                 />
-                <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+                <EditableTitle
+                  value={p.name}
+                  onSave={(name) => renameProject(p.id, name).then((res) => { router.refresh(); return res; })}
+                  className="min-w-0 flex-1 text-sm"
+                  inputClassName="min-w-0 flex-1 text-sm"
+                />
                 {isAdmin && (
                   <button
                     onClick={() => void removeProject(p)}

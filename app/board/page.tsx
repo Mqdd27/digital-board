@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { currentUser } from "@/lib/auth";
 import { get, isInstalled } from "@/lib/db";
-import { activityFeed, activityNotifications, analytics, getBoard, listCanvases, listMembers, listMembersWithPresence, listProjects, myTasks } from "@/lib/queries";
+import { activityFeed, activityNotifications, analytics, getBoard, listCanvases, listMembers, listMembersWithPresence, listProjects, myTasks, unreadCounts } from "@/lib/queries";
 import { Workspace } from "@/components/workspace";
 
 export default async function BoardPage({ searchParams }: PageProps<"/board">) {
@@ -26,6 +26,7 @@ export default async function BoardPage({ searchParams }: PageProps<"/board">) {
       presence={await listMembersWithPresence()}
       feed={await activityFeed()}
       notifications={await activityNotifications(user.id)}
+      unread={await unreadCounts(user.id)}
       mine={await myTasks(user.id)}
       stats={project ? await analytics(project.id) : null}
       sheets={project ? await listCanvases(project.id) : []}

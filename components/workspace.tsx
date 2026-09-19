@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,7 +8,7 @@ import {
   LayoutGrid, List, LogOut, MessageSquare, PenLine, Plus, Search, Settings, X,
 } from "lucide-react";
 import { applyFilters, initials, type Column, type Filters, type Member, type Task } from "@/lib/board";
-import { logoutAction, renameProject } from "@/lib/actions";
+import { logoutAction, renameProject, renameWorkspace } from "@/lib/actions";
 import type { CanvasMeta, FeedItem, MemberPresence, Project, Unread } from "@/lib/queries";
 import type { User } from "@/lib/auth";
 import { Avatar } from "./avatar";
@@ -45,8 +45,10 @@ const SECTIONS: { key: SectionKey; Icon: typeof Home; label: string }[] = [
   { key: "settings", Icon: Settings, label: "Settings" },
 ];
 
+type Alert = { title: string; body: string };
+
 export function Workspace({
-  user, workspace, projects, project, columns, members, presence, feed, notifications: initialNotifications, mine, stats, sheets, today, dark,
+  user, workspace, projects, project, columns, members, presence, feed, notifications: initialNotifications, unread: initialUnread, mine, stats, sheets, today, dark,
 }: {
   user: User;
   workspace: string;
@@ -56,6 +58,7 @@ export function Workspace({
   members: Member[];
   feed: FeedItem[];
   notifications: FeedItem[];
+  unread: Unread[];
   mine: MyTask[];
   stats: Stats | null;
   sheets: CanvasMeta[];
@@ -74,6 +77,11 @@ export function Workspace({
   const [notifications, setNotifications] = useState(initialNotifications);
   const [showNotifications, setShowNotifications] = useState(false);
   const [chatChannel, setChatChannel] = useState("all");
+  const [alert, setAlert] = useState<Alert | null>(null);
+  const seenCards = useRef(new Set(initialNotifications.map((item) => item.id)));
+  const seenChats = useRef(new Map(initialUnread.map((item) => [item.channel, item.n])));
+  const audio = useRef<AudioContext | null>(null);
+  const alertTimer = useRef<number | undefined>(undefined);
 
   const filtered = useMemo(() => applyFilters(columns, filters), [columns, filters]);
   const activeFilters = [filters.assignee, filters.priority, filters.label].filter(Boolean).length;
@@ -82,10 +90,29 @@ export function Workspace({
   const labels = [...new Set(columns.flatMap((c) => c.tasks.map((t) => t.label).filter(Boolean)))] as string[];
   const onBoard = section === "board";
 
+  const announce = useCallback((title: string, body: string) => {
+    setAlert({ title, body });
+    clearTimeout(alertTimer.current);
+    alertTimer.current = window.setTimeout(() => setAlert(null), 5000);
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification(title, { body, tag: "digital-board" });
+    }
+    const context = audio.current;
+    if (!context) return;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.frequency.value = 880;
+    gain.gain.setValueAtTime(0.06, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.15);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.15);
+  }, []);
+
   // Keep presence and unread badges live outside the Chat section. The ping is
   // also what keeps this user's own status "online" while they sit on a board.
   const [live, setLive] = useState<MemberPresence[]>(presence);
-  const [unread, setUnread] = useState<Unread[]>([]);
+  const [unread, setUnread] = useState<Unread[]>(initialUnread);
   useEffect(() => {
     let alive = true;
     const ping = async () => {
@@ -93,6 +120,12 @@ export function Workspace({
         const res = await fetch("/api/presence", { cache: "no-store" });
         if (!res.ok || !alive) return;
         const data = (await res.json()) as { members: MemberPresence[]; unread: Unread[]; notifications: FeedItem[] };
+        const card = data.notifications.find((item) => !seenCards.current.has(item.id));
+        const chat = data.unread.find((item) => item.n > (seenChats.current.get(item.channel) ?? 0));
+        seenCards.current = new Set(data.notifications.map((item) => item.id));
+        seenChats.current = new Map(data.unread.map((item) => [item.channel, item.n]));
+        if (card) announce("Card updated", `${card.taskTitle} · ${card.text}`);
+        else if (chat) announce("New chat message", chat.channel === "all" ? "Workspace" : data.members.find((member) => member.id === chat.channel)?.name ?? "Direct message");
         setLive(data.members);
         setUnread(data.unread);
         setNotifications(data.notifications);
@@ -106,7 +139,7 @@ export function Workspace({
       alive = false;
       clearInterval(t);
     };
-  }, []);
+  }, [announce]);
 
   const online = live.filter((m) => m.presence === "online").length;
   const unreadTotal = section === "chat" ? 0 : unread.reduce((n, u) => n + u.n, 0);
@@ -114,6 +147,21 @@ export function Workspace({
   function markNotificationsRead() {
     setNotifications([]);
     void fetch("/api/presence", { method: "POST" });
+  }
+
+  async function enableAlerts() {
+    if (typeof Notification === "undefined") {
+      setAlert({ title: "Alerts unavailable", body: "This browser does not support device alerts." });
+      return;
+    }
+    const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (permission !== "granted") {
+      setAlert({ title: "Alerts blocked", body: "Allow notifications in your browser settings to enable device alerts." });
+      return;
+    }
+    audio.current ??= new AudioContext();
+    if (audio.current.state === "suspended") await audio.current.resume();
+    setAlert({ title: "Alerts enabled", body: "New card and chat notifications will show here and on this device." });
   }
 
   const close = () => {
@@ -129,11 +177,18 @@ export function Workspace({
         style={{ width: collapsed ? 54 : 220, transition: "width 200ms cubic-bezier(0.4,0,0.2,1)" }}
         className="flex shrink-0 flex-col overflow-hidden border-r"
       >
-        <div className="flex h-14 items-center border-b px-3">
-          <button onClick={() => setCollapsed((c) => !c)} className="flex w-full items-center gap-2.5">
+        <div className="flex h-14 items-center gap-2 border-b px-3">
+          <button aria-label="Collapse sidebar" onClick={() => setCollapsed((c) => !c)} className="shrink-0">
             <LogoMark size={28} />
-            {!collapsed && <span className="truncate text-sm font-semibold tracking-tight">{workspace}</span>}
           </button>
+          {!collapsed && (
+            <EditableTitle
+              value={workspace}
+              onSave={(name) => renameWorkspace(name).then((r) => { router.refresh(); return r; })}
+              className="min-w-0 text-sm font-semibold tracking-tight"
+              inputClassName="min-w-0 w-full text-sm font-semibold tracking-tight"
+            />
+          )}
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 p-2 pt-3">
@@ -309,6 +364,7 @@ export function Workspace({
                     setShowNotifications(false);
                     setSection("inbox");
                   }}
+                  onEnableAlerts={enableAlerts}
                 />
               )}
             </div>
@@ -387,7 +443,7 @@ export function Workspace({
         ) : section === "chat" ? (
           <ChatView key={chatChannel} meId={user.id} initialMembers={live} initialChannel={chatChannel} />
         ) : section === "settings" ? (
-          <MembersPanel presence={live} isAdmin={user.is_admin === 1} projects={projects} activeProjectId={project?.id ?? null} />
+          <MembersPanel workspace={workspace} presence={live} isAdmin={user.is_admin === 1} projects={projects} activeProjectId={project?.id ?? null} />
         ) : !project ? (
           <EmptyProject />
         ) : section === "canvas" ? (
@@ -415,6 +471,12 @@ export function Workspace({
           defaultColumnId={creating ?? undefined}
           onClose={close}
         />
+      )}
+      {alert && (
+        <button onClick={() => setAlert(null)} className="fixed bottom-5 right-5 z-50 w-80 rounded-lg border bg-card p-3 text-left shadow-lg">
+          <p className="text-sm font-medium">{alert.title}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{alert.body}</p>
+        </button>
       )}
     </div>
   );
@@ -466,7 +528,7 @@ function FeedView({ feed }: { feed: FeedItem[] }) {
 }
 
 function NotificationMenu({
-  cards, unread, members, onOpenInbox, onOpenChat, onMarkRead, onOpenInboxPage,
+  cards, unread, members, onOpenInbox, onOpenChat, onMarkRead, onOpenInboxPage, onEnableAlerts,
 }: {
   cards: FeedItem[];
   unread: Unread[];
@@ -475,6 +537,7 @@ function NotificationMenu({
   onOpenChat: (channel: string) => void;
   onMarkRead: () => void;
   onOpenInboxPage: () => void;
+  onEnableAlerts: () => void;
 }) {
   return (
     <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-lg border bg-card shadow-lg">
@@ -507,6 +570,7 @@ function NotificationMenu({
       </div>
       <div className="flex border-t p-1">
         {cards.length > 0 && <button onClick={onMarkRead} className="rounded px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary">Mark cards read</button>}
+        <button onClick={onEnableAlerts} className="rounded px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary">Enable alerts</button>
         <button onClick={onOpenInboxPage} className="ml-auto rounded px-2 py-1.5 text-xs font-medium hover:bg-secondary">Open inbox</button>
       </div>
     </div>

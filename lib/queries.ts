@@ -70,8 +70,8 @@ type FeedRow = Omit<FeedItem, "atLabel" | "dayLabel">;
 
 export const activityFeed = async (limit = 100): Promise<FeedItem[]> =>
   (await all<FeedRow>(
-    `SELECT e.id, e.at, e.text, u.name AS actor, t.id AS taskId, t.title AS taskTitle,
-            c.title AS columnTitle, c.color AS columnColor
+    `SELECT e.id, e.at, e.text, u.name AS actor, t.id AS "taskId", t.title AS "taskTitle",
+            c.title AS "columnTitle", c.color AS "columnColor"
        FROM task_events e
        JOIN tasks t ON t.id = e.task_id
        JOIN columns c ON c.id = t.column_id
@@ -86,8 +86,8 @@ export const activityNotifications = async (userId: string, limit = 5): Promise<
     userId,
   ))?.last_activity_read_id ?? 0;
   return (await all<FeedRow>(
-    `SELECT e.id, e.at, e.text, u.name AS actor, t.id AS taskId, t.title AS taskTitle,
-            c.title AS columnTitle, c.color AS columnColor
+    `SELECT e.id, e.at, e.text, u.name AS actor, t.id AS "taskId", t.title AS "taskTitle",
+            c.title AS "columnTitle", c.color AS "columnColor"
        FROM task_events e
        JOIN tasks t ON t.id = e.task_id
        JOIN columns c ON c.id = t.column_id

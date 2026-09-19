@@ -163,7 +163,7 @@ npm start`}</Code>
             <C>/setup</C>. The wizard asks for four things:
           </p>
           <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
-            <li><strong className="text-foreground">Workspace name</strong> — shown in the sidebar.</li>
+            <li><strong className="text-foreground">Workspace name</strong> — shown in the sidebar; click it later to rename it.</li>
             <li><strong className="text-foreground">First project</strong> — a board. You can add more later.</li>
             <li><strong className="text-foreground">Board columns</strong> — pick from the presets or type your own. Columns can be added, renamed, recoloured, reordered and deleted from the board afterwards, so this is not a decision you are locked into.</li>
             <li><strong className="text-foreground">Admin account</strong> — name, email and a password of at least 8 characters. This account becomes the workspace admin.</li>
@@ -281,18 +281,18 @@ WantedBy=multi-user.target`}</Code>
           <Table
             head={["Area", "What it does"]}
             rows={[
-              [<strong className="text-foreground">Board</strong>, <>Drag and drop with reordering inside a column and positional drops between columns. Works with a mouse, with touch (long-press to pick a card up, so a normal swipe still scrolls), and with the keyboard. Task details are editable and previewed up to three lines on cards. Columns are add/rename/recolour/reorder/delete; deleting one takes its tasks and asks first.</>],
+              [<strong className="text-foreground">Board</strong>, <>Drag and drop with reordering inside a column and positional drops between columns. Works with a mouse, with touch (long-press to pick a card up, so a normal swipe still scrolls), and with the keyboard. Task details are editable and previewed up to three lines on cards. Click the project title to rename it. Columns are add/rename/recolour/reorder/delete; deleting one takes its tasks and asks first.</>],
               [<strong className="text-foreground">List</strong>, <>Every task as a table — status, label, priority, due date, assignee. Click a row to edit.</>],
               [<strong className="text-foreground">Calendar</strong>, <>Month grid, Monday-first. Dated tasks sit on their due date with a priority-coloured edge. Undated tasks are counted in the header.</>],
               [<strong className="text-foreground">Analytics</strong>, <>Totals, tasks per column, priority split, workload per member, and a 14-day activity chart built from the history log.</>],
               [<strong className="text-foreground">My Tasks</strong>, <>Everything assigned to you, soonest due first, overdue in red.</>],
               [<strong className="text-foreground">Inbox</strong>, <>Every change to every task, newest first, with who did it.</>],
-              [<strong className="text-foreground">Notifications</strong>, <>The bell dropdown combines unread card activity and chat. Card items open Inbox; chat items open the right conversation. Mark card activity read to clear it.</>],
+              [<strong className="text-foreground">Notifications</strong>, <>The bell dropdown combines unread card activity and chat. Card items open Inbox; chat items open the right conversation. Mark card activity read to clear it. Enable alerts there for browser notifications, an in-app popup, and sound.</>],
               [<strong className="text-foreground">Task history</strong>, <>Creation, column moves, reorders, and title/details/priority/assignee/due-date edits are all recorded. Open a task to see its timeline.</>],
               [<strong className="text-foreground">Canvas</strong>, <>Excalidraw with sheet tabs. Each sheet keeps its own drawing, saved on an 800ms debounce as you draw and flushed when you switch sheets or close the tab; switching sheets never disturbs another one. Pasted images are embedded in the sheet&rsquo;s snapshot rather than stored as attachments, so an image-heavy sheet becomes a large row.</>],
               [<strong className="text-foreground">Chat</strong>, <>A workspace channel everyone reads, plus a direct message thread per member. Unread badges, file attachments with inline image previews, and 15 minutes to edit your own message.</>],
               [<strong className="text-foreground">Presence</strong>, <>Online / away / offline per member, derived from activity rather than stored.</>],
-              [<strong className="text-foreground">Projects</strong>, <>Add and delete from Settings, switch from the sidebar. New projects start with the default columns.</>],
+              [<strong className="text-foreground">Projects</strong>, <>Add and delete from Settings, switch from the sidebar, and rename workspace or project names from Settings or their titles. New projects start with the default columns.</>],
             ]}
           />
 

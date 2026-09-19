@@ -228,6 +228,15 @@ export async function deleteProject(id: string) {
   return { ok: true };
 }
 
+export async function renameWorkspace(name: string) {
+  await requireUser();
+  const clean = name.trim();
+  if (!clean) return { error: "Workspace name is required." };
+  await run("UPDATE settings SET value = ? WHERE key = 'workspace'", clean);
+  revalidatePath("/board");
+  return { ok: true };
+}
+
 export async function renameProject(id: string, name: string) {
   await requireUser();
   const clean = name.trim();
