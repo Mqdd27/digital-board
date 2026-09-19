@@ -29,6 +29,10 @@ const collisionDetection: CollisionDetection = (args) => {
   return intersections.length > 0 ? intersections : closestCorners(args);
 };
 
+/** Column/task ordering, for comparing the optimistic tree against the server's. */
+const shape = (cols: Column[]) =>
+  cols.map((c) => `${c.id}:${c.tasks.map((t) => t.id).join(",")}`).join("|");
+
 function DropZone({ id, children }: { id: string; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
@@ -58,7 +62,13 @@ export function BoardView({
   const [local, setLocal] = useState<Column[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const originRef = useRef<string | null>(null);
-  const view = local ?? columns;
+  // Server layout the optimistic tree was branched from. `local` is shown only
+  // while the props still read that way: clearing it the moment the action
+  // resolves flashes one frame of pre-move data (the card snapping back), and
+  // keeping it past any server change hides everything that changed since —
+  // a task someone else added, or one this tab just created.
+  const [branchedFrom, setBranchedFrom] = useState<string | null>(null);
+  const view = local && shape(columns) === branchedFrom ? local : columns;
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -70,6 +80,7 @@ export function BoardView({
 
   function onDragStart({ active }: DragStartEvent) {
     setActiveId(String(active.id));
+    setBranchedFrom(shape(columns));
     setLocal(columns);
     originRef.current = columnOf(columns, String(active.id))?.id ?? null;
   }
@@ -105,9 +116,9 @@ export function BoardView({
     const final = reordered ? placeTask(local, id, to.id, newIndex) : local;
     setLocal(final);
     const index = final.find((c) => c.id === to.id)!.tasks.findIndex((t) => t.id === id);
+    // moveTask revalidates /board, so its response carries the new tree already —
+    // a router.refresh() here is a second round trip for the same data.
     await moveTask(id, to.id, index);
-    setLocal(null);
-    router.refresh();
   }
 
   return (
@@ -124,6 +135,7 @@ export function BoardView({
         onDragEnd={onDragEnd}
         onDragCancel={() => {
           setActiveId(null);
+          setBranchedFrom(null);
           setLocal(null);
         }}
       >
