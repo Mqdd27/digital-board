@@ -291,6 +291,7 @@ WantedBy=multi-user.target`}</Code>
               [<strong className="text-foreground">Task history</strong>, <>Creation, column moves, reorders, and title/details/priority/assignee/due-date edits are all recorded. Open a task to see its timeline.</>],
               [<strong className="text-foreground">Canvas</strong>, <>Excalidraw with sheet tabs. Each sheet keeps its own drawing, saved on an 800ms debounce as you draw and flushed when you switch sheets or close the tab; switching sheets never disturbs another one. Pasted images are embedded in the sheet&rsquo;s snapshot rather than stored as attachments, so an image-heavy sheet becomes a large row.</>],
               [<strong className="text-foreground">Chat</strong>, <>A workspace channel everyone reads, plus a direct message thread per member. Unread badges, file attachments with inline image previews, and 15 minutes to edit your own message.</>],
+              [<strong className="text-foreground">Access</strong>, <>A workspace admin assigns each member a role per project from Settings — <C>viewer</C> reads, <C>editor</C> changes tasks and canvases, <C>admin</C> also manages the project&rsquo;s structure and members. No role means the project is not listed and its rows are never sent to that browser. Every action re-checks the role server-side.</>],
               [<strong className="text-foreground">Presence</strong>, <>Online / away / offline per member, derived from activity rather than stored.</>],
               [<strong className="text-foreground">Projects</strong>, <>Add and delete from Settings, switch from the sidebar, and rename workspace or project names from Settings or their titles. New projects start with the default columns.</>],
             ]}
@@ -298,7 +299,7 @@ WantedBy=multi-user.target`}</Code>
 
           <H id="data">Data model</H>
           <p className="text-sm text-muted-foreground">
-            Eleven tables, defined in <C>lib/schema.sql</C> as plain SQL and applied on first use. Foreign keys
+            Thirteen tables, defined in <C>lib/schema.sql</C> as plain SQL and applied on first use. Foreign keys
             cascade, so deleting a parent row cleans up after itself.
           </p>
           <Table
@@ -308,6 +309,7 @@ WantedBy=multi-user.target`}</Code>
               [<C>sessions</C>, <>Login sessions: a random token, its owner, an expiry.</>],
               [<C>settings</C>, <>Key/value. Currently just the workspace name.</>],
               [<C>projects</C>, <>Boards.</>],
+              [<C>project_members</C>, <>Who may see a project, and as <C>admin</C>, <C>editor</C> or <C>viewer</C>.</>],
               [<C>columns</C>, <>Board columns, ordered by a dense <C>position</C>.</>],
               [<C>tasks</C>, <>Cards: title, details, label, priority, assignee, due date, position within a column.</>],
               [<C>task_events</C>, <>The history log — one row per change, with the actor.</>],
@@ -315,6 +317,7 @@ WantedBy=multi-user.target`}</Code>
               [<C>messages</C>, <>Chat. A <C>NULL</C> recipient is the workspace channel; a user id is a direct message.</>],
               [<C>message_reads</C>, <>One read cursor per person per conversation, which is what drives unread badges.</>],
               [<C>attachments</C>, <>Uploaded-file metadata and bytes.</>],
+              [<C>activity_reads</C>, <>How far each person has read the card-activity feed, which is what clears the bell.</>],
             ]}
           />
 
@@ -400,7 +403,6 @@ pm2 restart digital-board        # or: systemctl restart digital-board`}</Code>
               [<>The canvas area is blank after a deploy</>, <>A tab open across a deploy asks for chunk files the new build replaced, and the canvas library loads as its own chunk. The canvas now says so and offers a reload; older builds showed an empty black panel. Nothing is lost — reload the page. It is also why the whole canvas toolbar disappears, not just the drawing.</>],
               [<>A pasted image vanishes from the canvas after reload</>, <>Fixed. The save used a <C>keepalive</C> fetch, whose body the Fetch standard caps at 64 KiB; anything larger was rejected outright, so drawings containing media were never stored. Upgrade past this fix and re-add the image.</>],
               [<>Times are hours off</>, <>Timestamps render in the server&rsquo;s timezone. Set <C>TZ</C> on the service.</>],
-              [<>Import says the target already has accounts</>, <>The guard against importing twice. Use a fresh database, or pass <C>--force</C> if you really mean to merge.</>],
               [<>Port already in use</>, <>Set <C>PORT</C>, or stop whatever holds 3000. Under pm2, an old copy often survives a failed deploy — check <C>pm2 status</C>.</>],
               [<>Changes not live after a deploy</>, <>pm2 runs the built output, so <C>npm run build</C> has to come before <C>pm2 restart</C>. Restarting alone re-serves the old build.</>],
             ]}
@@ -411,6 +413,7 @@ pm2 restart digital-board        # or: systemctl restart digital-board`}</Code>
             <li>No self-service password reset. An admin creates a replacement account.</li>
             <li>Chat has no deletion, reactions, threads or typing indicators, and polling means near-real-time, not instant.</li>
             <li>Columns move one step at a time from the editor; there is no drag-to-reorder for columns themselves.</li>
+            <li>Project roles gate tasks, canvases and project structure. Chat is workspace-wide — it has no per-project scoping.</li>
                         <li>Every route renders dynamically, because the root layout reads the theme cookie.</li>
           </ul>
 

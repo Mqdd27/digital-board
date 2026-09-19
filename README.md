@@ -6,8 +6,9 @@
 
 Self-hosted work tracker. A kanban board with List, Calendar and Analytics views
 over the same tasks, a free-form drawing canvas with multiple sheets, and
-workspace chat with direct messages. Runs on your own machine against your own
-PostgreSQL — no third-party services, no per-seat billing.
+workspace chat with direct messages. Multi-user, with per-project roles.
+Runs on your own machine against your own PostgreSQL — no third-party services,
+no per-seat billing.
 
 ## Quick start
 
@@ -45,6 +46,7 @@ Requires **Node 22+** and **PostgreSQL 14+** (verified on 16). For development,
 | **Chat** | Workspace channel plus direct messages, with unread badges, attachments and a 15-minute edit window. |
 | **Notifications** | Bell dropdown combines unread card activity and chat. Card items open Inbox; chat items open their conversation; card items can be marked read. Enable alerts there for browser notifications, an in-app popup, and sound. |
 | **Accounts** | Multi-user with `scrypt` password hashing and cookie sessions. Presence shows who is online. |
+| **Access** | Per-project roles — admin, editor, viewer — assigned from Settings by a workspace admin. A project you hold no role in is not listed and its data never reaches your browser. Enforced server-side in every action, not just hidden in the UI. |
 
 ## Configuration
 
