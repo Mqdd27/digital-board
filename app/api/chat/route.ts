@@ -25,13 +25,13 @@ export async function GET(req: Request) {
   const after = Number(url.searchParams.get("after") ?? 0) || 0;
 
   // Viewing a conversation is what marks it read.
-  await markRead(me.id, withUser);
+  await markRead(me.workspace_id, me.id, withUser);
 
   return NextResponse.json(
     {
-      messages: await conversation(me.id, withUser, after),
-      members: await listMembersWithPresence(),
-      unread: await unreadCounts(me.id),
+      messages: await conversation(me.workspace_id, me.id, withUser, after),
+      members: await listMembersWithPresence(me.workspace_id),
+      unread: await unreadCounts(me.workspace_id, me.id),
       me: me.id,
     },
     { headers: { "cache-control": "no-store" } },
@@ -58,6 +58,9 @@ export async function POST(req: Request) {
     text = (json.body ?? "").trim();
   }
 
+  if (to && to !== "all" && !(await get("SELECT 1 FROM users WHERE id = ? AND workspace_id = ?", to, me.workspace_id))) {
+    return new NextResponse("No such recipient", { status: 403 });
+  }
   if (!text && files.length === 0) return new NextResponse("Empty message", { status: 400 });
   if (text.length > MAX_BODY) return new NextResponse("Message too long", { status: 413 });
   if (files.length > MAX_FILES) return new NextResponse(`At most ${MAX_FILES} files`, { status: 413 });
@@ -76,8 +79,8 @@ export async function POST(req: Request) {
   const now = new Date().toISOString();
   await transaction(async () => {
     const inserted = await get<{ id: number }>(
-      "INSERT INTO messages (author_id, recipient_id, body, created_at) VALUES (?,?,?,?) RETURNING id",
-      me.id, to && to !== "all" ? to : null, text, now,
+      "INSERT INTO messages (workspace_id, author_id, recipient_id, body, created_at) VALUES (?,?,?,?,?) RETURNING id",
+      me.workspace_id, me.id, to && to !== "all" ? to : null, text, now,
     );
     for (const f of saved) {
       await run(

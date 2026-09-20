@@ -11,7 +11,7 @@ export async function GET() {
   if (!me) return new NextResponse("Unauthorized", { status: 401 });
 
   return NextResponse.json(
-    { members: await listMembersWithPresence(), unread: await unreadCounts(me.id), notifications: await activityNotifications(me.id) },
+    { members: await listMembersWithPresence(me.workspace_id), unread: await unreadCounts(me.workspace_id, me.id), notifications: await activityNotifications(me.workspace_id, me.id) },
     { headers: { "cache-control": "no-store" } },
   );
 }
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const ids = Array.isArray(body?.ids) ? body.ids.filter((id: unknown): id is number => typeof id === "number" && Number.isInteger(id) && id > 0) : [];
   if (ids.length > 0) await markActivityItemsRead(me.id, ids);
-  else await markActivityRead(me.id);
-  if (new URL(req.url).searchParams.get("all") === "true") await markAllMessagesRead(me.id);
+  else await markActivityRead(me.workspace_id, me.id);
+  if (new URL(req.url).searchParams.get("all") === "true") await markAllMessagesRead(me.workspace_id, me.id);
   return new NextResponse(null, { status: 204 });
 }

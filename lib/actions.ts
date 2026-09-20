@@ -3,8 +3,8 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { all, get, isInstalled, run, transaction } from "./db";
-import { createUser, currentUser, endSession, login, startSession } from "./auth";
+import { all, get, run, transaction } from "./db";
+import { createUser, createWorkspace, currentUser, endSession, login, passwordOf, setPassword, startSession, verifyPassword } from "./auth";
 import { DEFAULT_COLUMNS, reorder, type Priority } from "./board";
 
 async function requireUser() {
@@ -34,10 +34,15 @@ async function writableColumn(user: Awaited<ReturnType<typeof requireUser>>, col
   return role !== null && role !== "viewer";
 }
 
-// ── Setup wizard ────────────────────────────────────────────────────────────
+// ── Registration ────────────────────────────────────────────────────────────
 
-export async function runSetup(_prev: unknown, form: FormData) {
-  if (await isInstalled()) redirect("/login");
+/**
+ * Creates a workspace and its first admin. Open to anyone by default — set
+ * REGISTRATION_CLOSED=1 to make this instance invite-only, which leaves the
+ * existing workspaces working and refuses new ones.
+ */
+export async function registerAction(_prev: unknown, form: FormData) {
+  if (process.env.REGISTRATION_CLOSED === "1") return { error: "This instance is not accepting new workspaces." };
 
   const workspace = String(form.get("workspace") ?? "").trim();
   const project = String(form.get("project") ?? "").trim();
@@ -51,22 +56,33 @@ export async function runSetup(_prev: unknown, form: FormData) {
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
   if (columns.length === 0) return { error: "Pick at least one column." };
 
-  const userId = await createUser(email, name, password, true);
-  await run("INSERT INTO settings (key, value) VALUES ('workspace', ?)", workspace);
-
-  const projectId = randomUUID();
-  await run("INSERT INTO projects (id, name, position, created_at) VALUES (?,?,0,?)", projectId, project, now());
-  for (const [i, title] of columns.entries()) {
-    const preset = DEFAULT_COLUMNS.find((d) => d.title === title);
-    await run(
-      "INSERT INTO columns (id, project_id, title, color, position) VALUES (?,?,?,?,?)",
-      randomUUID(),
-      projectId,
-      title,
-      preset?.color ?? "var(--muted-foreground)",
-      i,
-    );
+  if (await get("SELECT 1 FROM users WHERE lower(email) = lower(?)", email)) {
+    return { error: "That email already has an account. Sign in instead." };
   }
+
+  // One transaction: a half-made workspace with no admin is unreachable forever.
+  let userId = "";
+  await transaction(async () => {
+    const workspaceId = await createWorkspace(workspace);
+    userId = await createUser(workspaceId, email, name, password, true);
+
+    const projectId = randomUUID();
+    await run(
+      "INSERT INTO projects (id, workspace_id, name, position, created_at) VALUES (?,?,?,0,?)",
+      projectId, workspaceId, project, now(),
+    );
+    for (const [i, title] of columns.entries()) {
+      const preset = DEFAULT_COLUMNS.find((d) => d.title === title);
+      await run(
+        "INSERT INTO columns (id, project_id, title, color, position) VALUES (?,?,?,?,?)",
+        randomUUID(),
+        projectId,
+        title,
+        preset?.color ?? "var(--muted-foreground)",
+        i,
+      );
+    }
+  });
 
   await startSession(userId);
   redirect("/board");
@@ -98,7 +114,44 @@ export async function inviteMember(_prev: unknown, form: FormData) {
   if (!name || !email || password.length < 8) return { error: "Name, email and a password of at least 8 characters are required." };
   if (await get("SELECT 1 FROM users WHERE email = ?", email.toLowerCase())) return { error: "That email is already registered." };
 
-  await createUser(email, name, password);
+  await createUser(user.workspace_id, email, name, password);
+  revalidatePath("/board");
+  return { ok: true };
+}
+
+// ── Passwords ───────────────────────────────────────────────────────────────
+// No mail server here, so there is no emailed reset link. Two paths instead:
+// you change your own with your current password, or a workspace admin sets a
+// member's. Both drop that user's sessions, so a stolen one dies with the
+// password. Locked out of the admin account entirely? scripts/reset-password.mjs
+// on the machine holding the database.
+
+export async function changeMyPassword(_prev: unknown, form: FormData) {
+  const user = await requireUser();
+  const current = String(form.get("current") ?? "");
+  const next = String(form.get("next") ?? "");
+  if (next.length < 8) return { error: "New password must be at least 8 characters." };
+
+  const row = await passwordOf(user.id);
+  if (!row || !verifyPassword(current, row.password_hash)) return { error: "Current password is wrong." };
+
+  await setPassword(user.id, next);
+  // setPassword drops every session including this one; start a fresh one so
+  // changing your password does not sign you out of the tab you did it in.
+  await startSession(user.id);
+  return { ok: true };
+}
+
+export async function setMemberPassword(userId: string, password: string) {
+  const user = await requireUser();
+  if (!user.is_admin) return { error: "Only workspace admins can set a member's password." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+
+  const target = await get<{ workspace_id: string }>("SELECT workspace_id FROM users WHERE id = ?", userId);
+  if (!target || target.workspace_id !== user.workspace_id) return { error: "No such member." };
+
+  await setPassword(userId, password);
+  if (userId === user.id) await startSession(user.id);
   revalidatePath("/board");
   return { ok: true };
 }
@@ -233,9 +286,14 @@ export async function addProject(name: string) {
   if (!clean) return { error: "Project name is required." };
 
   const id = randomUUID();
-  const next = (await get<{ n: number }>("SELECT COALESCE(MAX(position) + 1, 0) n FROM projects"))!.n;
+  const next = (await get<{ n: number }>(
+    "SELECT COALESCE(MAX(position) + 1, 0) n FROM projects WHERE workspace_id = ?", user.workspace_id,
+  ))!.n;
   await transaction(async () => {
-    await run("INSERT INTO projects (id, name, position, created_at) VALUES (?,?,?,?)", id, clean, next, now());
+    await run(
+      "INSERT INTO projects (id, workspace_id, name, position, created_at) VALUES (?,?,?,?,?)",
+      id, user.workspace_id, clean, next, now(),
+    );
     // A project with no columns is a dead end, so seed the defaults.
     for (const [i, c] of DEFAULT_COLUMNS.entries()) {
       await run(
@@ -252,10 +310,10 @@ export async function addProject(name: string) {
 export async function deleteProject(id: string) {
   const user = await requireUser();
   if (!user.is_admin) return { error: "Only admins can delete a project." };
-  if ((await get<{ n: number }>("SELECT COUNT(*) n FROM projects"))!.n <= 1) {
+  if ((await get<{ n: number }>("SELECT COUNT(*) n FROM projects WHERE workspace_id = ?", user.workspace_id))!.n <= 1) {
     return { error: "A workspace needs at least one project." };
   }
-  await run("DELETE FROM projects WHERE id = ?", id);
+  await run("DELETE FROM projects WHERE id = ? AND workspace_id = ?", id, user.workspace_id);
   revalidatePath("/board");
   return { ok: true };
 }
@@ -265,7 +323,7 @@ export async function renameWorkspace(name: string) {
   if (!user.is_admin) return { error: "Only workspace admins can rename the workspace." };
   const clean = name.trim();
   if (!clean) return { error: "Workspace name is required." };
-  await run("UPDATE settings SET value = ? WHERE key = 'workspace'", clean);
+  await run("UPDATE workspaces SET name = ? WHERE id = ?", clean, user.workspace_id);
   revalidatePath("/board");
   return { ok: true };
 }

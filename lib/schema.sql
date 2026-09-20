@@ -125,3 +125,38 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at    TEXT;
 ALTER TABLE tasks    ADD COLUMN IF NOT EXISTS description  TEXT;
 ALTER TABLE attachments ADD COLUMN IF NOT EXISTS data BYTEA;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_read_id INTEGER NOT NULL DEFAULT 0;
+
+-- ── Multi-workspace ─────────────────────────────────────────────────────────
+-- Tenancy is carried by three columns. Everything under a project (columns,
+-- tasks, task_events, canvases) reaches its workspace through projects, and
+-- attachments / message_reads reach it through messages and users, so those
+-- tables need no column of their own.
+CREATE TABLE IF NOT EXISTS workspaces (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+ALTER TABLE users    ADD COLUMN IF NOT EXISTS workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE;
+
+-- Backfill for an install that predates workspaces: everything it holds is, by
+-- definition, one workspace. Named from the old settings row. Runs once —
+-- the guard is "some row still has no workspace_id".
+INSERT INTO workspaces (id, name, created_at)
+SELECT 'ws-legacy', COALESCE((SELECT value FROM settings WHERE key = 'workspace'), 'Workspace'), now()::text
+ WHERE EXISTS (SELECT 1 FROM users WHERE workspace_id IS NULL)
+   AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = 'ws-legacy');
+
+UPDATE users    SET workspace_id = 'ws-legacy' WHERE workspace_id IS NULL;
+UPDATE projects SET workspace_id = 'ws-legacy' WHERE workspace_id IS NULL;
+UPDATE messages SET workspace_id = 'ws-legacy' WHERE workspace_id IS NULL;
+
+CREATE INDEX IF NOT EXISTS users_workspace    ON users(workspace_id);
+CREATE INDEX IF NOT EXISTS projects_workspace ON projects(workspace_id, position);
+CREATE INDEX IF NOT EXISTS messages_workspace ON messages(workspace_id, recipient_id, id);
+
+-- Email stays globally unique on purpose. One address is one account in one
+-- workspace, which keeps sign-in a single lookup with no "which workspace?"
+-- step. Registering with an address that already exists is refused.

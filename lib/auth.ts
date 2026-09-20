@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { get, run } from "./db";
 import { PALETTE } from "./board";
 
-export type User = { id: string; email: string; name: string; color: string; is_admin: number };
+export type User = { id: string; email: string; name: string; color: string; is_admin: number; workspace_id: string };
 
 const COOKIE = "session";
 const DAYS = 30;
@@ -23,15 +23,31 @@ export function verifyPassword(password: string, stored: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export async function createUser(email: string, name: string, password: string, isAdmin = false) {
+export async function createUser(workspaceId: string, email: string, name: string, password: string, isAdmin = false) {
   const id = randomUUID();
-  const n = (await get<{ n: number }>("SELECT COUNT(*) n FROM users"))!.n;
+  // Colour cycles within the workspace so a new one does not start at index 7.
+  const n = (await get<{ n: number }>("SELECT COUNT(*) n FROM users WHERE workspace_id = ?", workspaceId))!.n;
   const color = PALETTE[n % PALETTE.length];
   await run(
-    "INSERT INTO users (id, email, name, password_hash, color, is_admin, created_at) VALUES (?,?,?,?,?,?,?)",
-    id, email.toLowerCase().trim(), name.trim(), hashPassword(password), color, isAdmin ? 1 : 0, new Date().toISOString());
+    "INSERT INTO users (id, workspace_id, email, name, password_hash, color, is_admin, created_at) VALUES (?,?,?,?,?,?,?,?)",
+    id, workspaceId, email.toLowerCase().trim(), name.trim(), hashPassword(password), color, isAdmin ? 1 : 0, new Date().toISOString());
   return id;
 }
+
+export async function createWorkspace(name: string) {
+  const id = randomUUID();
+  await run("INSERT INTO workspaces (id, name, created_at) VALUES (?,?,?)", id, name.trim(), new Date().toISOString());
+  return id;
+}
+
+export async function setPassword(userId: string, password: string) {
+  // Every existing session is a copy of the old credential. Drop them.
+  await run("UPDATE users SET password_hash = ? WHERE id = ?", hashPassword(password), userId);
+  await run("DELETE FROM sessions WHERE user_id = ?", userId);
+}
+
+export const passwordOf = (userId: string) =>
+  get<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = ?", userId);
 
 export async function startSession(userId: string) {
   const token = randomBytes(32).toString("hex");
@@ -59,7 +75,7 @@ export async function currentUser(): Promise<User | null> {
   if (!token) return null;
 
   const row = await get<User & { expires_at: string; last_seen_at: string | null }>(
-    `SELECT u.id, u.email, u.name, u.color, u.is_admin, u.last_seen_at, s.expires_at
+    `SELECT u.id, u.email, u.name, u.color, u.is_admin, u.workspace_id, u.last_seen_at, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token = ?`,
     token,
@@ -75,7 +91,7 @@ export async function currentUser(): Promise<User | null> {
   // otherwise someone who never opens Chat reads as "never signed in".
   // Throttled so a burst of requests is one write.
   await touch(row.id, row.last_seen_at);
-  return { id: row.id, email: row.email, name: row.name, color: row.color, is_admin: row.is_admin };
+  return { id: row.id, email: row.email, name: row.name, color: row.color, is_admin: row.is_admin, workspace_id: row.workspace_id };
 }
 
 const HEARTBEAT_MS = 45_000;

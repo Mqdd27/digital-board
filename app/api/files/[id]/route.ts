@@ -2,16 +2,28 @@ import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
 import { get } from "@/lib/db";
 
-/** Attachments are never public: every download goes through the session check. */
+/**
+ * Attachments are never public. A session alone is not enough: the id is
+ * guessable-ish and an attachment belongs to a message, which belongs to a
+ * workspace — and, if it is a DM, to two specific people. Both are checked here.
+ */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await currentUser())) return new NextResponse("Unauthorized", { status: 401 });
+  const user = await currentUser();
+  if (!user) return new NextResponse("Unauthorized", { status: 401 });
 
   const { id } = await params;
-  const row = await get<{ name: string; mime: string; size: number; data: Buffer | null }>(
-    "SELECT name, mime, size, data FROM attachments WHERE id = ?",
+  const row = await get<{ name: string; mime: string; size: number; data: Buffer | null; workspace_id: string; author_id: string; recipient_id: string | null }>(
+    `SELECT a.name, a.mime, a.size, a.data, m.workspace_id, m.author_id, m.recipient_id
+       FROM attachments a JOIN messages m ON m.id = a.message_id
+      WHERE a.id = ?`,
     id,
   );
   if (!row) return new NextResponse("Not found", { status: 404 });
+  if (row.workspace_id !== user.workspace_id) return new NextResponse("Not found", { status: 404 });
+  // A DM's files are for its two participants only.
+  if (row.recipient_id !== null && row.author_id !== user.id && row.recipient_id !== user.id) {
+    return new NextResponse("Not found", { status: 404 });
+  }
   if (!row.data) return new NextResponse("Attachment needs migration", { status: 410 });
 
   return new NextResponse(row.data as unknown as BodyInit, {

@@ -2,8 +2,8 @@
 
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderPlus, Plus, Trash2 } from "lucide-react";
-import { addProject, deleteProject, inviteMember, renameProject, renameWorkspace, setProjectMember } from "@/lib/actions";
+import { FolderPlus, KeyRound, Plus, Trash2 } from "lucide-react";
+import { addProject, changeMyPassword, deleteProject, inviteMember, renameProject, renameWorkspace, setMemberPassword, setProjectMember } from "@/lib/actions";
 import { initials } from "@/lib/board";
 import type { MemberPresence, Project, ProjectMember } from "@/lib/queries";
 import { Avatar } from "./avatar";
@@ -79,6 +79,14 @@ export function MembersPanel({
           )}
         </section>
 
+        <section>
+          <h2 className="text-sm font-semibold">Your password</h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Changing it signs out your other devices. There is no email reset — an admin can set a new one for you.
+          </p>
+          <ChangePassword />
+        </section>
+
         {/* Members */}
         <section>
           <h2 className="text-sm font-semibold">Members</h2>
@@ -107,6 +115,7 @@ export function MembersPanel({
                   <p className="text-[11px] capitalize">{m.presence}</p>
                   <p className="text-[10px] text-muted-foreground">{ago(m.lastSeen)}</p>
                 </div>
+                {isAdmin && <SetPassword userId={m.id} name={m.name} />}
               </li>
             ))}
           </ul>
@@ -229,5 +238,71 @@ export function MembersPanel({
         )}
       </div>
     </main>
+  );
+}
+
+/** Own password: current one required, so a borrowed tab cannot take the account. */
+function ChangePassword() {
+  const [state, action] = useActionState(changeMyPassword, null);
+  return (
+    <form action={action} className="flex flex-col gap-3 rounded-lg border bg-card p-3">
+      <Field label="Current password" name="current" type="password" required autoComplete="current-password" />
+      <Field label="New password" name="next" type="password" required minLength={8} autoComplete="new-password" />
+      <FormError error={state?.error} />
+      {state?.ok && <p className="text-xs text-[var(--chart-2)]">Password changed.</p>}
+      <SubmitButton>Change password</SubmitButton>
+    </form>
+  );
+}
+
+/** Admin reset. No current password — that is the point of a reset. */
+function SetPassword({ userId, name }: { userId: string; name: string }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setOpen(true); setDone(false); setError(null); }}
+        title={`Set a new password for ${name}`}
+        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+      >
+        <KeyRound className="size-3.5" />
+      </button>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const res = await setMemberPassword(userId, value);
+        if (res?.error) return setError(res.error);
+        setDone(true);
+        setValue("");
+        setOpen(false);
+      }}
+      className="flex shrink-0 items-center gap-1"
+    >
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        type="text"
+        autoFocus
+        minLength={8}
+        placeholder="New password"
+        aria-label={`New password for ${name}`}
+        className="w-32 rounded border bg-background px-1.5 py-1 text-xs outline-none focus:border-ring"
+      />
+      <button type="submit" className="rounded border px-1.5 py-1 text-xs hover:bg-secondary">Set</button>
+      <button type="button" onClick={() => { setOpen(false); setValue(""); }} className="rounded p-1 text-xs text-muted-foreground hover:bg-secondary">
+        ✕
+      </button>
+      {error && <span className="text-[10px] text-[var(--chart-7)]">{error}</span>}
+      {done && <span className="text-[10px] text-[var(--chart-2)]">Set</span>}
+    </form>
   );
 }

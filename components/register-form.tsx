@@ -2,11 +2,11 @@
 
 import { useActionState, useState } from "react";
 import { Check, Plus, X } from "lucide-react";
-import { runSetup } from "@/lib/actions";
+import { registerAction } from "@/lib/actions";
 import { Field, FormError, SubmitButton } from "./form-bits";
 
-export function SetupForm({ defaultColumns }: { defaultColumns: { title: string; color: string }[] }) {
-  const [state, action] = useActionState(runSetup, null);
+export function RegisterForm({ defaultColumns }: { defaultColumns: { title: string; color: string }[] }) {
+  const [state, action] = useActionState(registerAction, null);
   const [picked, setPicked] = useState(defaultColumns.map((c) => c.title));
   const [custom, setCustom] = useState("");
 

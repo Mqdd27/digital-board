@@ -3,8 +3,8 @@ import {
   ArrowRight, BarChart3, Calendar, Database, LayoutGrid, ListChecks, Lock, Timer,
 } from "lucide-react";
 import { LogoMark } from "@/components/logo-mark";
+import { currentUser } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { isInstalled } from "@/lib/db";
 
 const FEATURES = [
   { Icon: LayoutGrid, title: "Kanban board", desc: "Columns you define during setup. Drag tasks between them, or reorder within one — mouse, touch, or keyboard." },
@@ -16,8 +16,12 @@ const FEATURES = [
 ];
 
 export default async function Home() {
-  const installed = await isInstalled();
-  const cta = installed ? { href: "/board", label: "Open board" } : { href: "/setup", label: "Start setup" };
+  // Anyone can make a workspace, so the header CTA no longer depends on whether
+  // the instance has been "installed" — signed in goes to the board, everyone
+  // else is offered registration.
+  const cta = (await currentUser())
+    ? { href: "/board", label: "Open board" }
+    : { href: "/register", label: "Create a workspace" };
 
   return (
     <div className="min-h-screen bg-background text-foreground">

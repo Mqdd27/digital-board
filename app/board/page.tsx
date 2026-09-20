@@ -1,19 +1,18 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { currentUser } from "@/lib/auth";
-import { get, isInstalled } from "@/lib/db";
-import { activityFeed, activityNotifications, analytics, getBoard, listCanvases, listMembers, listMembersWithPresence, listProjects, myTasks, projectMembers, unreadCounts } from "@/lib/queries";
+import { activityFeed, activityNotifications, analytics, getBoard, listCanvases, listMembers, listMembersWithPresence, listProjects, myTasks, projectMembers, unreadCounts, workspaceName } from "@/lib/queries";
 import { Workspace } from "@/components/workspace";
 
 export default async function BoardPage({ searchParams }: PageProps<"/board">) {
-  if (!(await isInstalled())) redirect("/setup");
   const user = await currentUser();
   if (!user) redirect("/login");
+  const ws = user.workspace_id;
 
-  const projects = await listProjects(user.id, user.is_admin === 1);
+  const projects = await listProjects(ws, user.id, user.is_admin === 1);
   const wanted = (await searchParams).project;
   const project = projects.find((p) => p.id === wanted) ?? projects[0] ?? null;
-  const workspace = (await get<{ value: string }>("SELECT value FROM settings WHERE key = 'workspace'"))?.value ?? "Workspace";
+  const workspace = await workspaceName(ws);
 
   return (
     <Workspace
@@ -22,12 +21,12 @@ export default async function BoardPage({ searchParams }: PageProps<"/board">) {
       projects={projects}
       project={project}
       columns={project ? await getBoard(project.id) : []}
-      members={await listMembers()}
-      assignments={await projectMembers()}
-      presence={await listMembersWithPresence()}
-      feed={await activityFeed()}
-      notifications={await activityNotifications(user.id)}
-      unread={await unreadCounts(user.id)}
+      members={await listMembers(ws)}
+      assignments={await projectMembers(ws)}
+      presence={await listMembersWithPresence(ws)}
+      feed={await activityFeed(ws)}
+      notifications={await activityNotifications(ws, user.id)}
+      unread={await unreadCounts(ws, user.id)}
       mine={await myTasks(user.id)}
       stats={project ? await analytics(project.id) : null}
       sheets={project ? await listCanvases(project.id) : []}
