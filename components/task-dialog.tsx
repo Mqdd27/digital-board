@@ -28,10 +28,10 @@ export function TaskDialog({ task, columns, members, defaultColumnId, onClose }:
   }, [task]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6 animate-in fade-in duration-150" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="mt-10 flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border bg-card shadow-lg"
+        className="mt-10 flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border bg-card shadow-lg animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-200"
       >
         <div className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
           <h2 className="text-sm font-semibold">{editing ? "Edit task" : "New task"}</h2>

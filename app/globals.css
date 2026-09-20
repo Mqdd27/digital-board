@@ -139,3 +139,47 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+
+/* ── Motion ─────────────────────────────────────────────────────────────────
+   Theme change: the View Transitions API snapshots the old and new themes as
+   two stacked layers. The old one stays put and the new one is clipped to a
+   circle that grows from the toggle button (coordinates set in theme-toggle).
+   No crossfade on either layer — a fade plus a wipe reads as a flicker. */
+::view-transition-old(root) {
+  animation: none;
+}
+
+::view-transition-new(root) {
+  animation: theme-wipe 420ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes theme-wipe {
+  from {
+    clip-path: circle(0 at var(--wipe-x, 50%) var(--wipe-y, 50%));
+  }
+  to {
+    clip-path: circle(var(--wipe-r, 100vmax) at var(--wipe-x, 50%) var(--wipe-y, 50%));
+  }
+}
+
+/* Colours that are not part of the snapshot still need to settle smoothly when
+   the theme flips without a view transition (reduced motion is handled below). */
+body {
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+
+  /* tw-animate-css entrances and every transition above collapse to a cut. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

@@ -45,7 +45,7 @@ export function ColumnEditor({
   }
 
   return (
-    <div className="absolute left-0 top-8 z-30 w-60 rounded-lg border bg-card p-3 shadow-lg">
+    <div className="absolute left-0 top-8 z-30 w-60 rounded-lg border bg-card p-3 shadow-lg animate-in fade-in zoom-in-95 slide-in-from-top-1 duration-150">
       <div className="mb-2 flex items-center gap-2">
         <span className="text-xs font-semibold">{heading}</span>
         <button onClick={onClose} className="ml-auto text-muted-foreground hover:text-foreground">

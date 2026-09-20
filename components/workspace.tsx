@@ -440,7 +440,8 @@ export function Workspace({
           </div>
         )}
 
-        {/* Content */}
+        {/* Content. The key restarts the entrance on every section/view change. */}
+        <div key={`${section}:${view}`} className="flex flex-1 flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-1 duration-200">
         {section === "home" ? (
           <HomeView
             userName={user.name}
@@ -473,6 +474,7 @@ export function Workspace({
         ) : (
           stats && <AnalyticsView stats={stats} />
         )}
+        </div>
       </div>
 
       {(editing || creating !== null) && (
@@ -485,7 +487,7 @@ export function Workspace({
         />
       )}
       {alert && (
-        <button onClick={() => setAlert(null)} className="fixed bottom-5 right-5 z-50 w-80 rounded-lg border bg-card p-3 text-left shadow-lg">
+        <button onClick={() => setAlert(null)} className="fixed bottom-5 right-5 z-50 w-80 rounded-lg border bg-card p-3 text-left shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-300">
           <p className="text-sm font-medium">{alert.title}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">{alert.body}</p>
         </button>
@@ -559,7 +561,7 @@ function NotificationMenu({
   onEnableAlerts: () => void;
 }) {
   return (
-    <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-lg border bg-card shadow-lg">
+    <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-lg border bg-card shadow-lg animate-in fade-in zoom-in-95 slide-in-from-top-1 duration-150">
       <div className="max-h-80 overflow-y-auto p-1">
         {cards.length > 0 && (
           <>
